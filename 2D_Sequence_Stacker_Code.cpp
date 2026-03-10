@@ -5,9 +5,9 @@
 
 int singleMethod(
     const std::vector<double> &parts,
-    int target) { // method to find the best value to pair up with longest part
+    double target, int startIndex) { // method to find the best value to pair up with longest part
                   // taken from the parts list, (add to total of 144)
-  for (int i = 0; i < parts.size(); i++) {
+  for (int i = startIndex; i < parts.size(); i++) {
     if (parts[i] <= target) { // find closest value to target that will fit
       return i;
     }
@@ -43,11 +43,11 @@ std::vector<int> twoSumMethod(
 
 std::vector<int> threeSumMethod(
     const std::vector<double> &parts,
-    double target) { // method to find the best three values to pair up with
+    double target, int startIndex) { // method to find the best three values to pair up with
                      // longest part (closest result to 144 using 4 parts total)
   std::vector<int> bestIndices = {-1, -1, -1};
-  int bestDif = 144;
-  for (int i = 0; i < parts.size(); i++) {
+  double bestDif = 144;
+  for (int i = startIndex; i < parts.size(); i++) {
     if (parts[i] > target + 16)
       continue;
 
@@ -71,6 +71,63 @@ std::vector<int> threeSumMethod(
   return bestIndices;
 }
 
+std::vector<int> fourSumMethod(
+    const std::vector<double> &parts,
+    double target, int startIndex){
+        
+}
+    
+void makeNewLayer (std::vector<double> &parts,
+                   std::vector<std::vector<double>> &layers,
+                   int startIndex){
+                       
+    double firstPart = parts[startIndex];
+    parts.erase(parts.begin() + startIndex) ;
+
+    double target = 144 - firstPart;
+
+    std::vector<double> layer;
+    layer.push_back(firstPart);
+    
+    if (target >= 8) {
+      int addOne = singleMethod(parts, target, startIndex);
+      std::vector<int> addTwo = twoSumMethod(parts, target, startIndex);
+      std::vector<int> addThree = threeSumMethod(parts, target, startIndex);
+
+      double bestSingle =
+          (addOne == -1) ? -1: parts[addOne]; // (condition) ? value_it_becomes_if_true :
+                               // value_it_becomes_if_false
+      double bestTwo =
+          (addTwo[0] == -1) ? -1 : parts[addTwo[0]] + parts[addTwo[1]];
+      double bestThree =
+          (addThree[0] == -1)
+              ? -1
+              : parts[addThree[0]] + parts[addThree[1]] + parts[addThree[2]];
+
+      double best = std::max({bestSingle, bestTwo, bestThree});
+
+      if (best == -1){}
+      else if (best == bestSingle || bestSingle >= (best - 3)) {
+        layer.push_back(parts[addOne]);
+        parts.erase(parts.begin() + addOne);
+      } else if (best == bestTwo || bestTwo >= (best - 2)) {
+        layer.push_back(parts[addTwo[0]]);
+        layer.push_back(parts[addTwo[1]]);
+        parts.erase(parts.begin() + addTwo[1]);
+        parts.erase(parts.begin() + addTwo[0]);
+      } else if (best == bestThree) {
+        layer.push_back(parts[addThree[0]]);
+        layer.push_back(parts[addThree[1]]);
+        layer.push_back(parts[addThree[2]]);
+        parts.erase(parts.begin() + addThree[2]);
+        parts.erase(parts.begin() + addThree[1]);
+        parts.erase(parts.begin() + addThree[0]);
+      }
+    }
+
+    layers.push_back(layer);
+}
+
 int main() {
   std::vector<double> parts = {
       144,  144,  144,   144,   142,   142,   141.5, 139.5, 139,   136.5, 136.5,
@@ -90,56 +147,17 @@ int main() {
       layers; // a vector that holds vectors for each layer
 
   while (!parts.empty()) {
-
-    double firstPart = parts[0];
-    parts.erase(parts.begin());
-
-    double target = 144 - firstPart;
-
-    std::vector<double> layer;
-    layer.push_back(firstPart);
-
-    if (target >= 8) {
-      int addOne = singleMethod(parts, target);
-      std::vector<int> addTwo = twoSumMethod(parts, target, 0);
-      std::vector<int> addThree = threeSumMethod(parts, target);
-
-      double bestSingle =
-          (addOne == -1)
-              ? -1
-              : parts[addOne]; // (condition) ? value_it_becomes_if_true :
-                               // value_it_becomes_if_false
-      double bestTwo =
-          (addTwo[0] == -1) ? -1 : parts[addTwo[0]] + parts[addTwo[1]];
-      double bestThree =
-          (addThree[0] == -1)
-              ? -1
-              : parts[addThree[0]] + parts[addThree[1]] + parts[addThree[2]];
-
-      double best = std::max({bestSingle, bestTwo, bestThree});
-
-      if (best == -1)
-        continue;
-
-      if (best == bestSingle) {
-        layer.push_back(parts[addOne]);
-        parts.erase(parts.begin() + addOne);
-      } else if (best == bestTwo) {
-        layer.push_back(parts[addTwo[0]]);
-        layer.push_back(parts[addTwo[1]]);
-        parts.erase(parts.begin() + addTwo[1]);
-        parts.erase(parts.begin() + addTwo[0]);
-      } else if (best == bestThree) {
-        layer.push_back(parts[addThree[0]]);
-        layer.push_back(parts[addThree[1]]);
-        layer.push_back(parts[addThree[2]]);
-        parts.erase(parts.begin() + addThree[2]);
-        parts.erase(parts.begin() + addThree[1]);
-        parts.erase(parts.begin() + addThree[0]);
+      int midStart = 0;
+      for(int i = 0; i < parts.size(); i++){
+          if(parts[i] <= 75){
+              midStart = i;
+              break;
+          }
       }
-    }
-
-    layers.push_back(layer);
+      while (parts[midStart] >= 47.5){
+      makeNewLayer(parts, layers, midStart);
+      }
+    makeNewLayer(parts, layers, 0);
   }
 
   // print layers
