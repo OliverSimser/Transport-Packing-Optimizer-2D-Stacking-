@@ -70,12 +70,6 @@ std::vector<int> threeSumMethod(
   }
   return bestIndices;
 }
-
-std::vector<int> fourSumMethod(
-    const std::vector<double> &parts,
-    double target, int startIndex){
-        
-}
     
 void makeNewLayer (std::vector<double> &parts,
                    std::vector<std::vector<double>> &layers,
@@ -88,6 +82,8 @@ void makeNewLayer (std::vector<double> &parts,
 
     std::vector<double> layer;
     layer.push_back(firstPart);
+    
+    double best{-2};
     
     if (target >= 8) {
       int addOne = singleMethod(parts, target, startIndex);
@@ -104,7 +100,7 @@ void makeNewLayer (std::vector<double> &parts,
               ? -1
               : parts[addThree[0]] + parts[addThree[1]] + parts[addThree[2]];
 
-      double best = std::max({bestSingle, bestTwo, bestThree});
+      best = std::max({bestSingle, bestTwo, bestThree});
 
       if (best == -1){}
       else if (best == bestSingle || bestSingle >= (best - 3)) {
@@ -124,7 +120,28 @@ void makeNewLayer (std::vector<double> &parts,
         parts.erase(parts.begin() + addThree[0]);
       }
     }
-
+    
+    if (parts.size() < 5){
+        double targetNew  =  144 - firstPart - best;
+        int addOneNew = singleMethod(parts, targetNew, 0);
+        std::vector<int> addTwoNew = twoSumMethod(parts, targetNew, 0);
+        double bestSingleNew =
+          (addOneNew == -1) ? -1: parts[addOneNew]; // (condition) ? value_it_becomes_if_true :
+                               // value_it_becomes_if_false
+        double bestTwoNew =
+          (addTwoNew[0] == -1) ? -1 : parts[addTwoNew[0]] + parts[addTwoNew[1]];
+        double bestNew = std::max({bestSingleNew, bestTwoNew});
+        if (bestNew == -1){}
+        else if (bestNew == bestSingleNew) {
+        layer.push_back(parts[addOneNew]);
+        parts.erase(parts.begin() + addOneNew);
+      } else if (bestNew == bestTwoNew) {
+        layer.push_back(parts[addTwoNew[0]]);
+        layer.push_back(parts[addTwoNew[1]]);
+        parts.erase(parts.begin() + addTwoNew[1]);
+        parts.erase(parts.begin() + addTwoNew[0]);
+      }
+    }
     layers.push_back(layer);
 }
 
@@ -145,9 +162,8 @@ int main() {
 
   std::vector<std::vector<double>>
       layers; // a vector that holds vectors for each layer
-
+int midStart = 0;
   while (!parts.empty()) {
-      int midStart = 0;
       for(int i = 0; i < parts.size(); i++){
           if(parts[i] <= 75){
               midStart = i;
