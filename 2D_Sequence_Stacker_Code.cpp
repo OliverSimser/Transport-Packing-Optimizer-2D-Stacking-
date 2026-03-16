@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -177,6 +175,12 @@ int midStart = 0;
   }
 
   // print layers
+  
+  std::sort(layers.begin(), layers.end(),
+          [](const std::vector<double>& a, const std::vector<double>& b) {
+              return a[0] > b[0];  // descending by first part
+          });
+          
   std::cout << "\nLayers:\n\n";
 
   for (int i = 0; i < layers.size(); i++) {
