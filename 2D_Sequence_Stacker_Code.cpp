@@ -1,6 +1,9 @@
 #include <iostream>
 #include <vector>
 
+double singleTolerance = 3;
+double doubleTolerance = 2;
+
 int singleMethod(
     const std::vector<double> &parts,
     double target, int startIndex) { // method to find the best value to pair up with longest part
@@ -101,10 +104,10 @@ void makeNewLayer (std::vector<double> &parts,
       best = std::max({bestSingle, bestTwo, bestThree});
 
       if (best == -1){}
-      else if (best == bestSingle || bestSingle >= (best - 3)) {
+      else if (best == bestSingle || bestSingle >= (best - singleTolerance)) {
         layer.push_back(parts[addOne]);
         parts.erase(parts.begin() + addOne);
-      } else if (best == bestTwo || bestTwo >= (best - 2)) {
+      } else if (best == bestTwo || bestTwo >= (best - doubleTolerance)) {
         layer.push_back(parts[addTwo[0]]);
         layer.push_back(parts[addTwo[1]]);
         parts.erase(parts.begin() + addTwo[1]);
@@ -156,12 +159,27 @@ int main() {
       19.5, 19.5, 19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  15,    14.5,
       14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
       8.5,  8,    8,     8,     8,     8,     8,     8};
+// std::vector<double> parts = {
+//       124.5, 144, 8, 22.5, 34, 34, 49, 50.5, 64.5, 80.5, 86.5, 89, 100, 106.5, 111.5, 137.5, 140, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 8, 8, 11, 11, 11, 13.5, 20.5, 120.5};
   std::sort(parts.begin(), parts.end(), std::greater<double>());
+  
+    std::vector<std::vector<double>>
+    layers; // a vector that holds vectors for each layer
+  
+    bool useMidBand{0};
+  
+    double midCount = count_if(parts.begin(), parts.end(), [](double x) {
+    return x >= 25 && x <= 85;});
 
-  std::vector<std::vector<double>>
-      layers; // a vector that holds vectors for each layer
+                        
+    double largeCount = count_if(parts.begin(), parts.end(),
+                          [](double x){ return x >= 100; });
+
+    if ((midCount / largeCount) > 1) useMidBand = true;
+
 int midStart = 0;
   while (!parts.empty()) {
+      if (useMidBand){
       for(int i = 0; i < parts.size(); i++){
           if(parts[i] <= 75){
               midStart = i;
@@ -170,6 +188,11 @@ int midStart = 0;
       }
       while (parts[midStart] >= 47.5){
       makeNewLayer(parts, layers, midStart);
+      }
+      }
+      else{
+          singleTolerance = 6;
+          doubleTolerance = 5;
       }
     makeNewLayer(parts, layers, 0);
   }
