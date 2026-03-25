@@ -1,0 +1,1180 @@
+Public singleTolerance As Double
+Public doubleTolerance As Double
+
+Option Explicit
+
+Sub ParseAndGroupCBAParts()
+    Dim sourceWS As Worksheet, targetWS As Worksheet
+    Dim sheetName As String: sheetName = "Parsed Parts"
+    Dim lastRow As Long, i As Long, rowIndex As Long
+    Dim part As String, qty As Variant
+
+    Set sourceWS = ActiveSheet
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Worksheets(sheetName).Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+
+    Set targetWS = Worksheets.Add(After:=sourceWS)
+    targetWS.Name = sheetName
+
+    targetWS.Cells(1, 1).Value = "Full Part Number"
+    targetWS.Cells(1, 2).Value = "Project Number"
+    targetWS.Cells(1, 3).Value = "Height (in)"
+    targetWS.Cells(1, 4).Value = "Width (in)"
+    targetWS.Cells(1, 5).Value = "Type"
+    targetWS.Cells(1, 6).Value = "Length (in)"
+    targetWS.Cells(1, 7).Value = "Grounds"
+    targetWS.Cells(1, 8).Value = "Quantity"
+    targetWS.Cells(1, 9).Value = "Section"
+    targetWS.Range("A1:I1").Font.bold = True
+    
+    Dim secCol As Long, section As Long
+    secCol = 1
+    section = 1
+    rowIndex = 2
+    Do While sourceWS.Cells(1, secCol).Value <> ""
+
+        lastRow = sourceWS.Cells(sourceWS.Rows.Count, secCol).End(xlUp).Row
+
+    
+        For i = 2 To lastRow
+            part = Trim(sourceWS.Cells(i, secCol).Value)
+            qty = sourceWS.Cells(i, secCol + 1).Value
+            If InStr(part, "-") > 0 And IsNumeric(qty) Then
+                Dim parts() As String
+                parts = Split(part, "-")
+                If UBound(parts) >= 6 Then
+                    Dim hasProject As Boolean
+                    hasProject = (UCase(parts(0)) <> "CBA")
+                    Dim projectNumber As String, height As String, width As String
+                    Dim pType As String, rawLen As String, grounds As String
+    
+                    If hasProject Then
+                        projectNumber = parts(0)
+                        height = parts(3)
+                        width = parts(4)
+                        pType = parts(5)
+                        rawLen = parts(6)
+                        grounds = parts(7)
+                    Else
+                        projectNumber = "N/A"
+                        height = parts(2)
+                        width = parts(3)
+                        pType = parts(4)
+                        rawLen = parts(5)
+                        grounds = parts(6)
+                    End If
+    
+                    targetWS.Cells(rowIndex, 1).Value = part
+                    targetWS.Cells(rowIndex, 2).Value = projectNumber
+                    targetWS.Cells(rowIndex, 3).Value = height
+                    targetWS.Cells(rowIndex, 4).Value = width
+                    targetWS.Cells(rowIndex, 5).Value = pType
+                    If Len(rawLen) = 4 Then
+                        targetWS.Cells(rowIndex, 6).Value = val(left(rawLen, 3) & "." & right(rawLen, 1))
+                    Else
+                        targetWS.Cells(rowIndex, 6).Value = "Invalid"
+                    End If
+                    targetWS.Cells(rowIndex, 7).Value = Mid(grounds, 2)
+                    targetWS.Cells(rowIndex, 8).Value = qty
+                    targetWS.Cells(rowIndex, 9).Value = section
+                    rowIndex = rowIndex + 1
+                End If
+            End If
+        Next i
+        secCol = secCol + 3
+        section = section + 1
+    Loop
+
+    With targetWS.Sort
+        .SortFields.Clear
+        .SortFields.Add key:=targetWS.Range("F2:F" & rowIndex - 1), _
+            SortOn:=xlSortOnValues, Order:=xlDescending, DataOption:=xlSortNormal
+        .SetRange targetWS.Range("A1:I" & rowIndex - 1)
+        .Header = xlYes
+        .Apply
+    End With
+
+    With targetWS.Range("A1:I" & rowIndex - 1)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .EntireColumn.AutoFit
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlThin
+    End With
+    Call CreateCoversSheet
+    Call GroupSDsIntoSKIDs
+    
+    Dim wsSkids As Worksheet
+    Set wsSkids = ThisWorkbook.Sheets("SKIDs")
+    Dim btn As Button
+    Set btn = wsSkids.Buttons.Add(wsSkids.Cells(wsSkids.Rows.Count, 1).End(xlUp).Offset(7, 0).left, _
+                               wsSkids.Cells(wsSkids.Rows.Count, 1).End(xlUp).Offset(7, 0).Top, 80, 25)
+    btn.OnAction = "ResetCBASheets"
+    btn.Caption = "Reset"
+    btn.Name = "ResetButton"
+    
+    Set btn = wsSkids.Buttons.Add(wsSkids.Cells(wsSkids.Rows.Count, 1).End(xlUp).Offset(5, 0).left, _
+                               wsSkids.Cells(wsSkids.Rows.Count, 1).End(xlUp).Offset(5, 0).Top, 80, 25)
+    btn.OnAction = "SequenceSkids"
+    btn.Caption = "Sequence"
+    btn.Name = "SequenceButton"
+    MsgBox "Covers sheet and skids created. Edit skids as desired before sequencing (you can even add other skids with other parts to be sequenced), make sure layers are updated and in order, skid titles are 2 columns apart, and empty skids are removed. If resequencing, please delete the old skid naming table and sequencing summary table." & vbCrLf & "On covers sheet, Paste parts of covers you would like to have formatted and their qty into column A and B and drag columns C to E down, this can be copied into your skid drawing BOM!" & vbCrLf & "(Plase be mindful of custom covers, this sheet assumes all covers are standard, please adjust the naming of custom covers)", vbInformation
+
+    
+End Sub
+
+Sub ResetCBASheets()
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Sheets("Parsed Parts").Delete
+    Sheets("SKIDs").Delete
+    Sheets("Covers").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    MsgBox "Sheets and contents reset. You can start fresh!"
+End Sub
+
+
+'==== DROP-IN REPLACEMENT ====
+Sub GroupSDsIntoSKIDs()
+    Dim wsParsed As Worksheet, wsSkidding As Worksheet, wsSkids As Worksheet, wsCovers As Worksheet
+    Dim lastRow As Long, i As Long, j As Long
+    Dim part As String, heightVal As String, lengthVal As Double, qty As Long
+    Dim sdDict As Object, item As Object
+    Dim currentSkid As Long, startCol As Long
+    Dim sectionNum As Long, maxSection As Long
+    Dim hKey As Variant, heightKeys As Variant
+    Dim layerLimit As Object
+    Const MAX_LEN As Double = 144#
+
+    '--- inputs / cleanup
+    Set wsParsed = ThisWorkbook.Sheets("Parsed Parts")
+    Set wsCovers = ThisWorkbook.Sheets("COVERS")
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Worksheets("SKIDDING").Delete
+    Worksheets("SKIDs").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+
+    '--- temp layout sheet
+    Set wsSkidding = Worksheets.Add(After:=wsParsed)
+    wsSkidding.Name = "SKIDDING"
+
+    '--- per-height layer limits (keep existing behavior)
+    Set layerLimit = CreateObject("Scripting.Dictionary")
+    layerLimit.Add "06", 14
+    layerLimit.Add "08", 14
+    layerLimit.Add "10", 12
+    layerLimit.Add "12", 10
+
+    heightKeys = Array("12", "10", "08", "06") ' process tallest first
+    lastRow = wsParsed.Cells(wsParsed.Rows.Count, "A").End(xlUp).Row
+    maxSection = Application.WorksheetFunction.Max(wsParsed.Range("I2:I" & lastRow))
+
+    currentSkid = 1
+    startCol = 1
+
+    '======================
+    ' Build skids by Section, then by Height
+    '======================
+    For sectionNum = 1 To maxSection
+
+        ' Collect parts per height for this section as (Part,Length,Height) items
+        Set sdDict = CreateObject("Scripting.Dictionary")
+        sdDict.Add "06", New Collection
+        sdDict.Add "08", New Collection
+        sdDict.Add "10", New Collection
+        sdDict.Add "12", New Collection
+
+        For i = 2 To lastRow
+            part = Trim$(wsParsed.Cells(i, 1).Value)
+            heightVal = Format$(wsParsed.Cells(i, 3).Value, "00")
+            lengthVal = wsParsed.Cells(i, 6).Value
+            qty = wsParsed.Cells(i, 8).Value
+
+            If wsParsed.Cells(i, 9).Value = sectionNum Then ' Column I = Section
+                If sdDict.Exists(heightVal) And IsNumeric(lengthVal) And IsNumeric(qty) Then
+                    For j = 1 To qty
+                        Set item = CreateObject("Scripting.Dictionary")
+                        item("Part") = part
+                        item("Height") = heightVal
+                        item("Length") = CDbl(lengthVal)
+                        sdDict(heightVal).Add item
+                    Next j
+                End If
+            End If
+        Next i
+
+        ' For each height, apply YOUR layer-building algorithm
+        For Each hKey In heightKeys
+
+            ' Get collection for this height
+            Dim items As Collection
+            Set items = sdDict(hKey)
+            If items.Count = 0 Then GoTo NextHeight
+        
+            ' Sort descending by length
+            SortItemsByLengthDesc items
+        
+            ' === Mode Selection ===
+            Dim midCount As Long, largeCount As Long
+            Dim L As Double
+            Dim useMidBand As Boolean
+        
+            midCount = 0
+            largeCount = 0
+        
+            For i = 1 To items.Count
+                L = GetLen(items, i)
+                If L >= 25 And L <= 85 Then midCount = midCount + 1
+                If L >= 100 Then largeCount = largeCount + 1
+            Next i
+        
+            If largeCount = 0 Then
+                useMidBand = False
+            Else
+                useMidBand = (midCount / largeCount) > 1
+            End If
+        
+            ' === Set tolerances ===
+            If useMidBand Then
+                singleTolerance = 3
+                doubleTolerance = 2
+            Else
+                singleTolerance = 6
+                doubleTolerance = 5
+            End If
+        
+            ' Prepare output collection
+            Dim layers As New Collection
+        
+            ' === MODE A: Mid-band first ===
+            If useMidBand Then
+                Dim midStart As Long
+                midStart = FirstIndexLE(items, 75#)
+        
+                If midStart > 0 Then
+                    Do While midStart <= items.Count
+                        If GetLen(items, midStart) >= 47.5 Then
+                            layers.Add MakeNewLayer(items, midStart, MAX_LEN)
+                        Else
+                            Exit Do
+                        End If
+                    Loop
+                End If
+            End If
+        
+            ' === MODE A + MODE B: ALWAYS create one top-down layer next ===
+            If items.Count > 0 Then
+                layers.Add MakeNewLayer(items, 1, MAX_LEN)   ' 1 = index 0 in C++
+            End If
+        
+            ' === Continue making layers ===
+            Do While items.Count > 0
+                layers.Add MakeNewLayer(items, 1, MAX_LEN)
+            Loop
+            
+           
+
+            '======================
+            ' WRITE the layers to SKIDDING in skid blocks (preserving existing borders/widths)
+            '======================
+            Dim rowPointer As Long, topRow As Long, layerCount As Long, bold As XlBorderWeight, thin As XlBorderWeight
+            bold = xlMedium: thin = xlThin
+
+            rowPointer = 1
+            topRow = 1
+            layerCount = 0
+
+            
+            Dim layerIndex As Long
+            For layerIndex = 1 To layers.Count
+            Dim layer As Collection: Set layer = layers(layerIndex)
+
+                ' Open a new skid block if needed
+                If layerCount = 0 Then
+                    With wsSkidding.Range(wsSkidding.Cells(rowPointer, startCol), wsSkidding.Cells(rowPointer, startCol + 1))
+                        .Merge
+                        .Value = "SKID" & currentSkid & " - Section: " & sectionNum & " (H" & hKey & ")"
+                        .Font.bold = True
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                    End With
+                    rowPointer = rowPointer + 1
+                End If
+
+                Dim layerTotal As Double: layerTotal = SumLayer(layer)
+
+                ' First row of the layer: label + first part + total
+                With wsSkidding.Cells(rowPointer, startCol)
+                    .Value = "L" & (layerCount + 1)
+                    .Font.bold = True
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .Borders(xlEdgeTop).LineStyle = xlContinuous
+                    .Borders(xlEdgeTop).Weight = bold
+                    .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                    .Borders(xlEdgeLeft).Weight = thin
+                    .Borders(xlEdgeRight).LineStyle = xlContinuous
+                    .Borders(xlEdgeRight).Weight = thin
+                    .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                    .Borders(xlEdgeBottom).Weight = thin
+                End With
+                With wsSkidding.Cells(rowPointer, startCol + 1)
+                    .Value = layer(1)("Part")
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .Borders(xlEdgeTop).LineStyle = xlContinuous
+                    .Borders(xlEdgeTop).Weight = bold
+                    .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                    .Borders(xlEdgeLeft).Weight = thin
+                    .Borders(xlEdgeRight).LineStyle = xlContinuous
+                    .Borders(xlEdgeRight).Weight = thin
+                    .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                    .Borders(xlEdgeBottom).Weight = thin
+                End With
+                With wsSkidding.Cells(rowPointer, startCol + 2)
+                    .Value = layerTotal
+                    .NumberFormat = "0.00"
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                    .Borders(xlEdgeTop).LineStyle = xlContinuous
+                    .Borders(xlEdgeTop).Weight = bold
+                    .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                    .Borders(xlEdgeLeft).Weight = thin
+                    .Borders(xlEdgeRight).LineStyle = xlContinuous
+                    .Borders(xlEdgeRight).Weight = thin
+                    .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                    .Borders(xlEdgeBottom).Weight = thin
+                End With
+                rowPointer = rowPointer + 1
+
+                ' Subsequent rows of the layer: parts only
+                Dim p As Long
+                For p = 2 To layer.Count
+                    With wsSkidding.Cells(rowPointer, startCol) ' blank label cell with borders
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                        .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                        .Borders(xlEdgeLeft).Weight = thin
+                        .Borders(xlEdgeRight).LineStyle = xlContinuous
+                        .Borders(xlEdgeRight).Weight = thin
+                        .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                        .Borders(xlEdgeBottom).Weight = thin
+                    End With
+                    With wsSkidding.Cells(rowPointer, startCol + 1)
+                        .Value = layer(p)("Part")
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                        .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                        .Borders(xlEdgeLeft).Weight = thin
+                        .Borders(xlEdgeRight).LineStyle = xlContinuous
+                        .Borders(xlEdgeRight).Weight = thin
+                        .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                        .Borders(xlEdgeBottom).Weight = thin
+                    End With
+                    With wsSkidding.Cells(rowPointer, startCol + 2)
+                        .Value = ""
+                        .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                        .Borders(xlEdgeLeft).Weight = thin
+                        .Borders(xlEdgeRight).LineStyle = xlContinuous
+                        .Borders(xlEdgeRight).Weight = thin
+                        .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                        .Borders(xlEdgeBottom).Weight = thin
+                    End With
+                    rowPointer = rowPointer + 1
+                Next p
+
+                layerCount = layerCount + 1
+
+                ' If we reached the per-skid layer limit for this height, close the block and open a new skid
+                If layerCount >= layerLimit(hKey) Or layerIndex = layers.Count Then
+                    With wsSkidding
+                        .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeTop).Weight = bold
+                        .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeBottom).Weight = bold
+                        .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeLeft).Weight = bold
+                        .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeRight).Weight = bold
+
+                        .Columns(startCol).ColumnWidth = 5.78
+                        .Columns(startCol + 1).ColumnWidth = 34.78
+                        .Columns(startCol + 2).ColumnWidth = 9.78
+                        .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).RowHeight = 20
+                    End With
+
+                    ' Prepare for next skid (if any)
+                    currentSkid = currentSkid + 1
+                    startCol = startCol + 4
+                    rowPointer = 1
+                    topRow = 1
+                    layerCount = 0
+                End If
+            Next layerIndex
+
+NextHeight:
+        Next hKey
+    Next sectionNum
+
+    '=========================
+    ' Build final SKIDs sheet from SKIDDING (reuse your existing logic)
+    '=========================
+    Dim numSkids As Long, searchCol As Long, maxRow As Long, curSkidRow As Long
+    Dim layerCount2 As Long, rowPointer2 As Long, lastDataRow As Long, curRow As Long
+    Dim maxVal As Double
+
+    numSkids = currentSkid - 1
+
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Worksheets("SKIDs").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+
+    Set wsSkids = Worksheets.Add(After:=wsCovers)
+    wsSkids.Name = "SKIDs"
+
+    startCol = 1
+    searchCol = 1
+
+    Dim skidIdx As Long
+    For skidIdx = 1 To numSkids
+        rowPointer2 = 1
+        layerCount2 = 1
+        ' Header
+        With wsSkids.Range(wsSkids.Cells(rowPointer2, startCol), wsSkids.Cells(rowPointer2, startCol + 1))
+            .Merge
+            .Value = wsSkidding.Cells(1, searchCol).Value
+            .Font.bold = True
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .Borders(xlEdgeTop).Weight = xlMedium
+            .Borders(xlEdgeBottom).Weight = xlMedium
+            .Borders(xlEdgeLeft).Weight = xlMedium
+            .Borders(xlEdgeRight).Weight = xlMedium
+        End With
+        rowPointer2 = rowPointer2 + 1
+
+        ' === NEW: WRITE LAYERS EXACTLY IN THE ORDER THEY APPEAR IN SKIDDING ===
+
+            Dim layerList As Collection
+            Dim lay As Collection
+            Dim r As Long
+            
+            Set layerList = New Collection
+            r = 2 ' first row of first layer in SKIDDING
+            
+            ' Collect layers exactly in the order SKIDDING produced
+            Do While wsSkidding.Cells(r, searchCol).Value <> "" Or wsSkidding.Cells(r, searchCol + 1).Value <> ""
+                
+                Set lay = New Collection
+                
+                ' Add first part of the layer
+                lay.Add wsSkidding.Cells(r, searchCol + 1).Value
+                r = r + 1
+                
+                ' Add all additional parts in the layer
+                Do While wsSkidding.Cells(r, searchCol).Value = "" And wsSkidding.Cells(r, searchCol + 1).Value <> ""
+                    lay.Add wsSkidding.Cells(r, searchCol + 1).Value
+                    r = r + 1
+                Loop
+                
+                layerList.Add lay
+            Loop
+            
+            ' === WRITE THE LAYERS INTO SKIDs SHEET IN EXACT SAME ORDER ===
+            
+            rowPointer2 = 2
+            layerCount2 = 1
+            
+            Dim layerIdx As Long
+            For layerIdx = 1 To layerList.Count
+                Set lay = layerList(layerIdx)
+                
+                wsSkids.Cells(rowPointer2, startCol).Value = "L" & layerCount2
+                wsSkids.Cells(rowPointer2, startCol).Font.bold = True
+                wsSkids.Cells(rowPointer2, startCol + 1).Value = lay(1)
+                rowPointer2 = rowPointer2 + 1
+                
+                Dim k As Long
+                For k = 2 To lay.Count
+                    wsSkids.Cells(rowPointer2, startCol + 1).Value = lay(k)
+                    rowPointer2 = rowPointer2 + 1
+                Next k
+            
+                layerCount2 = layerCount2 + 1
+            Next layerIdx
+
+        ' Formatting
+        With wsSkids
+            Dim formatRange As Range
+            Set formatRange = .Range(.Cells(2, startCol), .Cells(rowPointer2 - 1, startCol + 1))
+            With formatRange.Borders
+                .LineStyle = xlContinuous
+                .Weight = xlMedium
+            End With
+            With formatRange
+                .Borders(xlEdgeTop).Weight = xlMedium
+                .Borders(xlEdgeBottom).Weight = xlMedium
+                .Borders(xlEdgeLeft).Weight = xlMedium
+                .Borders(xlEdgeRight).Weight = xlMedium
+                .Borders(xlInsideHorizontal).Weight = xlThin
+                .Borders(xlInsideVertical).Weight = xlThin
+            End With
+            .Columns(startCol).ColumnWidth = 5.78
+            .Columns(startCol + 1).ColumnWidth = 34.78
+            .Columns(startCol + 2).ColumnWidth = 9.78
+            formatRange.RowHeight = 20
+        End With
+
+        searchCol = searchCol + 4
+        startCol = startCol + 4
+    Next skidIdx
+
+    ' === Summary, sequencing & cleanup: reuse your existing SequenceSkids macro after this call if desired ===
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets("SKIDDING").Delete
+    Application.DisplayAlerts = True
+    
+End Sub
+
+'==== HELPERS PORTED FROM YOUR C++ LOGIC ====
+Private Function MakeNewLayer(ByRef items As Collection, ByVal startIndex As Long, ByVal MAX_LEN As Double) As Collection
+    Dim n As Long: n = items.Count
+    Dim arr() As Object
+    Dim used() As Boolean
+    Dim i As Long
+
+    ' Copy collection to array
+    ReDim arr(1 To n)
+    ReDim used(1 To n)
+
+    For i = 1 To n
+        Set arr(i) = items(i)
+    Next i
+
+    Dim layer As New Collection
+
+    ' === 1. PICK LEAD PART (stable index) ===
+    Dim firstPart As Object
+    Set firstPart = arr(startIndex)
+    used(startIndex) = True
+
+    layer.Add firstPart
+
+    Dim target As Double
+    target = MAX_LEN - firstPart("Length")
+
+    ' === 2. FIND BEST SINGLE / BEST TWO / BEST THREE ===
+    Dim bestSingleIdx As Long, bestTwoIdx(1 To 2) As Long, bestThreeIdx(1 To 3) As Long
+    Dim bestSingle As Double, bestTwo As Double, bestThree As Double
+    Dim bestTotal As Double: bestTotal = -1#
+
+    bestSingleIdx = FindBestSingle(arr, used, target, startIndex)
+    
+Dim tmp2 As Variant
+tmp2 = FindBestTwo(arr, used, target, startIndex)
+bestTwoIdx(1) = tmp2(1)
+bestTwoIdx(2) = tmp2(2)
+
+    
+Dim tmp3 As Variant
+tmp3 = FindBestThree(arr, used, target, startIndex)
+bestThreeIdx(1) = tmp3(1)
+bestThreeIdx(2) = tmp3(2)
+bestThreeIdx(3) = tmp3(3)
+
+    
+If bestSingleIdx > 0 Then bestSingle = arr(bestSingleIdx)("Length") Else bestSingle = -1#
+If bestTwoIdx(1) > 0 Then bestTwo = arr(bestTwoIdx(1))("Length") + arr(bestTwoIdx(2))("Length") Else bestTwo = -1#
+If bestThreeIdx(1) > 0 Then bestThree = arr(bestThreeIdx(1))("Length") + arr(bestThreeIdx(2))("Length") + arr(bestThreeIdx(3))("Length") Else bestThree = -1#
+
+bestTotal = Max3(bestSingle, bestTwo, bestThree)
+
+
+    ' === 3. APPLY TOLERANCES USING ARRAY INDICES (no shift) ===
+    If bestTotal >= 0 Then
+
+        ' SINGLE
+        If bestSingle = bestTotal Or bestSingle >= bestTotal - singleTolerance Then
+            If bestSingleIdx > 0 And Not used(bestSingleIdx) Then
+                used(bestSingleIdx) = True
+                layer.Add arr(bestSingleIdx)
+            End If
+            GoTo FinishPrimary
+        End If
+
+        ' TWO
+        If bestTwo = bestTotal Or bestTwo >= bestTotal - doubleTolerance Then
+            If bestTwoIdx(1) > 0 Then used(bestTwoIdx(1)) = True
+            If bestTwoIdx(2) > 0 Then used(bestTwoIdx(2)) = True
+
+            If bestTwoIdx(1) > 0 Then layer.Add arr(bestTwoIdx(1))
+            If bestTwoIdx(2) > 0 Then layer.Add arr(bestTwoIdx(2))
+            GoTo FinishPrimary
+        End If
+
+        ' THREE
+        If bestThree = bestTotal Then
+            used(bestThreeIdx(1)) = True
+            used(bestThreeIdx(2)) = True
+            used(bestThreeIdx(3)) = True
+
+            layer.Add arr(bestThreeIdx(1))
+            layer.Add arr(bestThreeIdx(2))
+            layer.Add arr(bestThreeIdx(3))
+        End If
+
+    End If
+
+FinishPrimary:
+
+   ' === 4. TOP-OFF SAFELY (ARRAY INDEXING) ===
+Dim currentTotal As Double
+currentTotal = SumLayer(layer)
+
+If n - CountTrue(used) < 5 Then
+    Dim remainingTarget As Double
+    remainingTarget = MAX_LEN - currentTotal
+
+    Dim topSingleIdx As Long, topTwoIdx(1 To 2) As Long
+    Dim topSingle As Double, topTwo As Double
+
+    ' BEST SINGLE
+    topSingleIdx = FindBestSingle(arr, used, remainingTarget, 1)
+
+    ' BEST TWO (use variant temp!)
+    Dim tmpTop2 As Variant
+    tmpTop2 = FindBestTwo(arr, used, remainingTarget, 1)
+    topTwoIdx(1) = tmpTop2(1)
+    topTwoIdx(2) = tmpTop2(2)
+
+    If topSingleIdx > 0 Then
+        topSingle = arr(topSingleIdx)("Length")
+    Else
+        topSingle = -1#
+    End If
+
+    If topTwoIdx(1) > 0 Then
+        topTwo = arr(topTwoIdx(1))("Length") + arr(topTwoIdx(2))("Length")
+    Else
+        topTwo = -1#
+    End If
+
+    Dim bestTop As Double
+    bestTop = Application.WorksheetFunction.Max(topSingle, topTwo)
+
+    ' ADD ONLY IF IT FITS
+    If bestTop = topSingle And bestTop >= 0 Then
+        If currentTotal + topSingle <= MAX_LEN Then
+            used(topSingleIdx) = True
+            layer.Add arr(topSingleIdx)
+        End If
+
+    ElseIf bestTop = topTwo And bestTop >= 0 Then
+        If currentTotal + topTwo <= MAX_LEN Then
+            used(topTwoIdx(1)) = True
+            used(topTwoIdx(2)) = True
+            layer.Add arr(topTwoIdx(1))
+            layer.Add arr(topTwoIdx(2))
+        End If
+    End If
+End If
+
+    ' === 5. COMPACT unused items back into collection ===
+    Dim newItems As New Collection
+    For i = 1 To n
+        If Not used(i) Then newItems.Add arr(i)
+    Next i
+
+    Set items = newItems
+    Set MakeNewLayer = layer
+End Function
+
+
+Private Function FindBestSingle(arr As Variant, used() As Boolean, target As Double, startIdx As Long) As Long
+    Dim i As Long
+    For i = startIdx To UBound(arr)
+        If Not used(i) Then
+            If arr(i)("Length") <= target Then
+                FindBestSingle = i: Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+Private Function FindBestTwo(arr As Variant, used() As Boolean, target As Double, startIdx As Long) As Variant
+    Dim res(1 To 2) As Long
+    Dim left As Long, right As Long
+    Dim bestDif As Double: bestDif = 1000000000#
+    Dim sum As Double
+
+    left = startIdx
+    right = UBound(arr)
+
+    Do While left < right
+
+        ' Skip used left
+        Do While left < right And used(left)
+            left = left + 1
+        Loop
+
+        ' Skip used right
+        Do While left < right And used(right)
+            right = right - 1
+        Loop
+
+        If left >= right Then Exit Do
+
+        sum = arr(left)("Length") + arr(right)("Length")
+
+        If sum <= target Then
+            If (target - sum) < bestDif Then
+                bestDif = target - sum
+                res(1) = left
+                res(2) = right
+                If bestDif = 0 Then Exit Do
+            End If
+        End If
+
+        If sum > target Then
+            left = left + 1
+        Else
+            right = right - 1
+        End If
+
+    Loop
+
+    FindBestTwo = res
+End Function
+
+Private Function FindBestThree(arr As Variant, used() As Boolean, target As Double, startIdx As Long) As Variant
+    Dim res(1 To 3) As Long
+    Dim i As Long, complement As Double
+    Dim tmpPair As Variant
+    Dim sum3 As Double, dif As Double
+    Dim bestDif As Double: bestDif = 1000000000#
+
+    For i = startIdx To UBound(arr)
+
+        ' Skip used indices
+        If used(i) Then GoTo NextI
+        If arr(i)("Length") > target + 16 Then GoTo NextI
+
+        complement = target - arr(i)("Length")
+
+        ' === FIX: capture FindBestTwo result safely ===
+        tmpPair = FindBestTwo(arr, used, complement, i + 1)
+
+        If tmpPair(1) > 0 Then
+            sum3 = arr(i)("Length") + arr(tmpPair(1))("Length") + arr(tmpPair(2))("Length")
+            dif = target - sum3
+
+            If dif >= 0 And dif < bestDif Then
+                bestDif = dif
+                res(1) = i
+                res(2) = tmpPair(1)
+                res(3) = tmpPair(2)
+                If dif = 0 Then Exit For
+            End If
+        End If
+
+NextI:
+    Next i
+
+    FindBestThree = res
+End Function
+
+Private Function CountTrue(used() As Boolean) As Long
+    Dim i As Long
+    For i = LBound(used) To UBound(used)
+        If used(i) Then CountTrue = CountTrue + 1
+    Next i
+End Function
+
+'==== small utilities ====
+
+Private Function GetLen(ByRef items As Collection, ByVal idx As Long) As Double
+    ' Safe accessor: return 0 if idx is out of range
+    If idx < 1 Or idx > items.Count Then
+        GetLen = 0#
+    Else
+        GetLen = CDbl(items(idx)("Length"))
+    End If
+End Function
+
+
+Private Function SumLayer(ByVal layer As Collection) As Double
+    Dim k As Long, t As Double
+    For k = 1 To layer.Count
+        t = t + CDbl(layer(k)("Length"))
+    Next k
+    SumLayer = t
+End Function
+
+Private Sub SortItemsByLengthDesc(ByRef items As Collection)
+    ' Copy collection items to an array, sort by "Length" DESC, then rebuild the collection.
+    Dim n As Long, i As Long, j As Long
+    n = items.Count
+    If n <= 1 Then Exit Sub
+
+    ' Array of Objects (each element is the Dictionary: "Part","Height","Length")
+    Dim arr() As Object
+    ReDim arr(1 To n)
+
+    For i = 1 To n
+        Set arr(i) = items(i)
+    Next i
+
+    ' In-place sort: simple insertion sort on the array by Length (DESC)
+    Dim key As Object
+    Dim keyLen As Double
+    For i = 2 To n
+        Set key = arr(i)
+        keyLen = CDbl(key("Length"))
+        j = i - 1
+        Do While j >= 1 And CDbl(arr(j)("Length")) < keyLen
+            Set arr(j + 1) = arr(j)
+            j = j - 1
+        Loop
+        Set arr(j + 1) = key
+    Next i
+
+    ' Rebuild the collection
+    Dim sorted As New Collection
+    For i = 1 To n
+        sorted.Add arr(i)
+    Next i
+
+    ' Repoint the ByRef reference to the new, sorted collection
+    Set items = sorted
+End Sub
+
+Private Function FirstIndexLE(ByRef items As Collection, ByVal threshold As Double) As Long
+    ' first index where Length <= threshold (list is DESC)
+    Dim i As Long
+    For i = 1 To items.Count
+        If GetLen(items, i) <= threshold Then FirstIndexLE = i: Exit Function
+    Next i
+    FirstIndexLE = 0
+End Function
+
+Private Function Max3(ByVal a As Double, ByVal b As Double, ByVal c As Double) As Double
+    Max3 = Application.WorksheetFunction.Max(a, Application.WorksheetFunction.Max(b, c))
+End Function
+
+
+        
+Sub SequenceSkids()
+    Dim wsSkids As Worksheet
+    Set wsSkids = ThisWorkbook.Sheets("SKIDs")
+    
+    Dim startCol As Long: startCol = 1
+    Dim currentSkid As Long: currentSkid = 1
+    Dim seqCol As Long
+    Dim skidName As String
+    Dim lastRow As Long
+    Dim maxLayers As Long
+    Dim r As Long, i As Long, j As Long, k As Long
+    Dim layerLabel As String, layerParts As Collection, tempList As Collection
+    Dim rowIdx As Long, pName As String, pLength As Double
+    Dim item As Object, parts() As String
+    Dim subIndex As Long, sequenceBase As Long
+
+    Do While left(wsSkids.Cells(1, startCol).Value, 4) = "SKID"
+        ' --- Find last row for this SKID ---
+        r = 2
+        Do While wsSkids.Cells(r, startCol + 1).Value <> ""
+            r = r + 1
+        Loop
+        lastRow = r - 1
+
+        If lastRow < 2 Then
+            startCol = startCol + 4
+            currentSkid = currentSkid + 1
+            GoTo NextSkid
+        End If
+
+        ' --- Insert sequence column header ---
+        seqCol = startCol + 2
+        wsSkids.Cells(1, seqCol).Value = "SEQUENCE"
+        wsSkids.Cells(1, seqCol).Interior.Color = RGB(255, 255, 0)
+        wsSkids.Cells(1, seqCol).Font.bold = True
+        wsSkids.Range(wsSkids.Cells(2, seqCol), wsSkids.Cells(lastRow, seqCol)).ClearContents
+
+        ' --- Determine max number of layers ---
+        maxLayers = 0
+        For r = 2 To lastRow
+            If wsSkids.Cells(r, startCol).Value Like "L*" Then
+                If val(Mid(wsSkids.Cells(r, startCol).Value, 2)) > maxLayers Then
+                    maxLayers = val(Mid(wsSkids.Cells(r, startCol).Value, 2))
+                End If
+            End If
+        Next r
+
+        ' --- Sequence each layer ---
+        For i = 1 To maxLayers
+            layerLabel = "L" & i
+            Set layerParts = New Collection
+
+            ' Find layer rows
+            For r = 2 To lastRow
+                If wsSkids.Cells(r, startCol).Value = layerLabel And wsSkids.Cells(r, startCol + 1).Value <> "" Then
+                    layerParts.Add r
+                    j = r + 1
+                    Do While wsSkids.Cells(j, startCol).Value = "" And wsSkids.Cells(j, startCol + 1).Value <> ""
+                        layerParts.Add j
+                        j = j + 1
+                    Loop
+                    Exit For
+                End If
+            Next r
+
+            sequenceBase = maxLayers - i + 1
+
+            If layerParts.Count = 1 Then
+                wsSkids.Cells(layerParts(1), seqCol).Value = Format(sequenceBase, "0.00")
+            ElseIf layerParts.Count > 1 Then
+                Set tempList = New Collection
+                For j = 1 To layerParts.Count
+                    rowIdx = layerParts(j)
+                    pName = wsSkids.Cells(rowIdx, startCol + 1).Value
+                    parts = Split(pName, "-")
+
+                    If left(pName, 1) = "C" Then
+                        If UBound(parts) >= 5 And IsNumeric(parts(5)) Then
+                            pLength = CDbl(parts(5))
+                        Else
+                            pLength = 0
+                        End If
+                    Else
+                        If UBound(parts) >= 6 And IsNumeric(parts(6)) Then
+                            pLength = CDbl(parts(6))
+                        Else
+                            pLength = 0
+                        End If
+                    End If
+
+                    Set item = CreateObject("Scripting.Dictionary")
+                    item("row") = rowIdx
+                    item("length") = pLength
+                    tempList.Add item
+                Next j
+
+                ' Sort by length descending
+                For j = 1 To tempList.Count - 1
+                    For k = j + 1 To tempList.Count
+                        If tempList(j)("length") < tempList(k)("length") Then
+                            Set item = tempList(j)
+                            Set tempList(j) = tempList(k)
+                            Set tempList(k) = item
+                        End If
+                    Next k
+                Next j
+
+                For subIndex = 1 To tempList.Count
+                    wsSkids.Cells(tempList(subIndex)("row"), seqCol).Value = Format(sequenceBase + subIndex / 10, "0.00")
+                Next subIndex
+            End If
+        Next i
+
+        ' Optional: Format sequence column
+        With wsSkids.Range(wsSkids.Cells(2, seqCol), wsSkids.Cells(lastRow, seqCol))
+            .NumberFormat = "0.00"
+            .Borders.LineStyle = xlContinuous
+            .Borders.Weight = xlThin
+        End With
+
+NextSkid:
+        startCol = startCol + 4
+        currentSkid = currentSkid + 1
+    Loop
+     ' === START: Build Summary Table ===
+
+    Dim chartStartCol As Long
+    Dim chartRow As Long
+    chartStartCol = startCol ' startCol was incremented in the last loop
+    chartRow = 2
+
+    With wsSkids
+        ' --- SKID NUMBER & SKID ID Map ---
+        .Cells(1, chartStartCol).Value = "SKID NUMBER"
+        .Cells(1, chartStartCol + 1).Value = "SKID ID HERE"
+        .Range(.Cells(1, chartStartCol), .Cells(1, chartStartCol + 1)).Font.bold = True
+
+        Dim topcol As Long
+        For topcol = 1 To startCol - 1 Step 4
+            If .Cells(1, topcol).Value <> "" Then
+                .Cells(chartRow, chartStartCol).Value = .Cells(1, topcol).Value
+                chartRow = chartRow + 1
+            End If
+        Next topcol
+
+        .Columns(chartStartCol).AutoFit
+        .Columns(chartStartCol + 1).ColumnWidth = 14
+
+        With .Range(.Cells(1, chartStartCol), .Cells(chartRow - 1, chartStartCol + 1)).Borders
+            .LineStyle = xlContinuous
+            .Weight = xlThin
+        End With
+    End With
+
+    ' --- SKID Summary Table ---
+    chartStartCol = chartStartCol + 3
+    chartRow = 2
+
+    With wsSkids
+        .Cells(1, chartStartCol).Value = "SKID"
+        .Cells(1, chartStartCol + 1).Value = "PRODUCT"
+        .Cells(1, chartStartCol + 2).Value = "SKID ID"
+        .Cells(1, chartStartCol + 3).Value = "SKID SEQUENCE"
+        .Range(.Cells(1, chartStartCol), .Cells(1, chartStartCol + 3)).Font.bold = True
+        .Range(.Cells(1, chartStartCol + 1), .Cells(1, chartStartCol + 3)).Interior.Color = RGB(255, 255, 0)
+
+        Dim skidCol As Long: skidCol = 1
+        Dim skidLabel As String
+
+        Do While left(.Cells(1, skidCol).Value, 4) = "SKID"
+            skidLabel = .Cells(1, skidCol).Value
+
+            Dim prow As Long: prow = 2
+            Do While .Cells(prow, skidCol + 1).Value <> ""
+                .Cells(chartRow, chartStartCol).Value = skidLabel ' SKID name (e.g. SKID1)
+                .Cells(chartRow, chartStartCol + 1).Value = .Cells(prow, skidCol + 1).Value ' PART
+
+                ' Lookup SKID ID from earlier 2-column map
+                .Cells(chartRow, chartStartCol + 2).Formula = "=XLOOKUP(" & _
+                    .Cells(chartRow, chartStartCol).Address(False, False) & ", " & _
+                    .Range(.Cells(2, chartStartCol - 3), .Cells(100, chartStartCol - 3)).Address(True, True) & ", " & _
+                    .Range(.Cells(2, chartStartCol - 2), .Cells(100, chartStartCol - 2)).Address(True, True) & ", """")"
+
+                .Cells(chartRow, chartStartCol + 3).Value = .Cells(prow, skidCol + 2).Value ' SEQUENCE
+
+                chartRow = chartRow + 1
+                prow = prow + 1
+            Loop
+
+            skidCol = skidCol + 4
+        Loop
+
+        ' --- Format Summary Table ---
+        .Columns(chartStartCol).AutoFit
+        .Columns(chartStartCol + 1).AutoFit
+        .Columns(chartStartCol + 2).ColumnWidth = 14
+        .Columns(chartStartCol + 3).NumberFormat = "0.00"
+        .Columns(chartStartCol + 3).AutoFit
+
+        With .Range(.Cells(1, chartStartCol), .Cells(chartRow - 1, chartStartCol + 3)).Borders
+            .LineStyle = xlContinuous
+            .Weight = xlThin
+        End With
+
+        ' --- Optional: Sort by PRODUCT ---
+        With wsSkids.Sort
+            .SortFields.Clear
+            .SortFields.Add key:=wsSkids.Range(wsSkids.Cells(2, chartStartCol + 1), wsSkids.Cells(chartRow - 1, chartStartCol + 1)), _
+                SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+        
+            .SetRange wsSkids.Range(wsSkids.Cells(1, chartStartCol), wsSkids.Cells(chartRow - 1, chartStartCol + 3))
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .Apply
+        End With
+    End With
+
+    ' === END Summary Table ===
+
+    MsgBox "Sequencing complete.", vbInformation
+End Sub
+
+
+Sub CreateCoversSheet()
+    Dim wsParsed As Worksheet, wsCovers As Worksheet
+    Dim lastRow As Long, i As Long
+    Dim sheetExists As Boolean
+    Dim ws As Worksheet
+
+    On Error Resume Next
+    Set wsParsed = ThisWorkbook.Sheets("Parsed Parts")
+    On Error GoTo 0
+
+    If wsParsed Is Nothing Then
+        MsgBox "Sheet 'Parsed Parts' not found!", vbCritical
+        Exit Sub
+    End If
+
+    sheetExists = False
+    For Each ws In ThisWorkbook.Sheets
+        If ws.Name = "COVERS" Then
+            sheetExists = True
+            Set wsCovers = ws
+            Exit For
+        End If
+    Next ws
+
+    If sheetExists Then
+        wsCovers.Cells.Clear
+    Else
+        Set wsCovers = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+        wsCovers.Name = "COVERS"
+    End If
+
+    With wsCovers
+        .Cells(1, 1).Value = "STRAIGHT NAME"
+        .Cells(1, 2).Value = "QTY"
+        .Cells(1, 3).Value = "PART NUMBER"
+        .Cells(1, 4).Value = "QTY"
+        .Cells(1, 5).Value = "DESCRIPTION"
+    End With
+
+    lastRow = wsParsed.Cells(wsParsed.Rows.Count, 1).End(xlUp).Row
+
+    wsCovers.Cells(2, 3).Formula = _
+        "=IF(LEFT(A" & 2 & ",1)=""C"", ""CBC-AL-"" & MID(A" & 2 & ",11,10) & ""-CVR"", ""CBC-AL-"" & MID(A" & 2 & ",18,10) & ""-CVR"")"
+    wsCovers.Cells(2, 4).Formula = "=B2"
+    wsCovers.Cells(2, 5).Formula = _
+        "=IF(MID(C" & 2 & ",14,1)=""0"", IF(MID(C" & 2 & ",15,1)=""0"", MID(C" & 2 & ",16,1), MID(C" & 2 & ",15,2)), MID(C" & 2 & ",14,3))" & _
+        "&IF(MID(C" & 2 & ",17,1)=""5"","".5"","""")" & _
+        "&CHAR(34)" & _
+        "&IF(MID(C" & 2 & ",11,1)=""H"","" HORIZONTAL "","" VERTICAL "")" & _
+        "&""STRAIGHT COVER"""
+
+    With wsCovers
+        lastRow = .Cells(.Rows.Count, "C").End(xlUp).Row
+
+        .Sort.SortFields.Clear
+
+        .Sort.SortFields.Add key:=.Range("C2:C" & lastRow), _
+            SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+
+        With .Sort
+            .SetRange wsCovers.Range("A2:D" & lastRow)
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .Apply
+        End With
+    End With
+
+    wsCovers.Columns("A:D").AutoFit
+
+    With wsCovers.Range("C2:E" & lastRow).Borders
+        .LineStyle = xlContinuous
+        .Weight = xlThin
+    End With
+    
+    wsCovers.Columns("A").ColumnWidth = 35.78
+    wsCovers.Columns("B").ColumnWidth = 3.78
+    wsCovers.Columns("C").ColumnWidth = 21.78
+    wsCovers.Columns("D").ColumnWidth = 3.78
+    wsCovers.Columns("E").ColumnWidth = 32.78
+
+    wsCovers.Range("A1:E1").Font.bold = True
+    
+
+End Sub
