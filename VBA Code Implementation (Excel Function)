@@ -275,12 +275,58 @@ Sub GroupSDsIntoSKIDs()
                 layers.Add MakeNewLayer(items, 1, MAX_LEN)   ' 1 = index 0 in C++
             End If
         
+        
+        
+            
             ' === Continue making layers ===
             Do While items.Count > 0
                 layers.Add MakeNewLayer(items, 1, MAX_LEN)
             Loop
             
-           
+            ' === SORT LAYERS BY TOTAL DESC, THEN BY PIECE COUNT ASC ===
+            Dim sortedLayers As New Collection
+            Dim used() As Boolean
+            Dim bestIdx As Long
+            
+            ' Unique local variable names (so no collisions)
+            Dim totLen As Double
+            Dim pieceCount As Long
+            Dim layerRef As Collection
+            
+            ReDim used(1 To layers.Count)
+            
+            Do While sortedLayers.Count < layers.Count
+                Dim bestTotal As Double: bestTotal = -1
+                Dim bestPieces As Long: bestPieces = 9999
+            
+                bestIdx = 0
+            
+                ' Use existing "i" from the main method
+                For i = 1 To layers.Count
+                    If Not used(i) Then
+                        ' IMPORTANT: do NOT redeclare "lay"
+                        Set layerRef = layers(i)
+            
+                        totLen = SumLayer(layerRef)
+                        pieceCount = layerRef.Count
+            
+                        ' Highest total first, ties ? fewest pieces
+                        If (totLen > bestTotal) Or _
+                           (totLen = bestTotal And pieceCount < bestPieces) Then
+                            bestTotal = totLen
+                            bestPieces = pieceCount
+                            bestIdx = i
+                        End If
+                    End If
+                Next i
+            
+                used(bestIdx) = True
+                sortedLayers.Add layers(bestIdx)
+            Loop
+            
+            Set layers = sortedLayers
+
+
 
             '======================
             ' WRITE the layers to SKIDDING in skid blocks (preserving existing borders/widths)
