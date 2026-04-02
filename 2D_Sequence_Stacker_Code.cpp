@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 
-double singleTolerance = 3;
+double singleTolerance = 3; //Tolerances to favor smaller groups, thus using up less "glueing" pieces
 double doubleTolerance = 2;
 
 int singleMethod(
@@ -18,15 +18,14 @@ int singleMethod(
 
 std::vector<int> twoSumMethod(
     const std::vector<double> &parts, double target,
-    int leftStart) { // method to find the best two values to pair up with
-                     // longest part (closest result to 144 using 3 parts total)
+    int leftStart) { // method to find the best two values to pair up with longest part (closest result to 144 using 3 parts total)
   int leftPointer = leftStart;
-  int rightPointer = (parts.size() - 1);
+  int rightPointer = (parts.size() - 1); //Create pointers on both ends
   std::vector<int> bestIndices = {-1, -1};
   double bestDif = 144;
   while (leftPointer < rightPointer) {
     double sum = parts[leftPointer] + parts[rightPointer];
-    if (std::abs(target - sum) < std::abs(bestDif)) {
+    if (std::abs(target - sum) < std::abs(bestDif)) { //if the sum of these two pointers indexs is a new best, save it and update the new best difference
       if (sum <= target) {
         bestDif = (target - sum);
         bestIndices = {leftPointer, rightPointer};
@@ -34,9 +33,9 @@ std::vector<int> twoSumMethod(
           break;
       }
     }
-    if (sum > target)
+    if (sum > target) //If the sum is too large, move the left pointer in, so that we are dealing with a smaller number on this end of the sorted array
       leftPointer++;
-    else
+    else 
       rightPointer--;
   }
   return bestIndices;
@@ -44,11 +43,10 @@ std::vector<int> twoSumMethod(
 
 std::vector<int> threeSumMethod(
     const std::vector<double> &parts,
-    double target, int startIndex) { // method to find the best three values to pair up with
-                     // longest part (closest result to 144 using 4 parts total)
+    double target, int startIndex) { // method to find the best three values to pair up with longest part (closest result to 144 using 4 parts total)
   std::vector<int> bestIndices = {-1, -1, -1};
   double bestDif = 144;
-  for (int i = startIndex; i < parts.size(); i++) {
+  for (int i = startIndex; i < parts.size(); i++) { //Go down the list and get each numbers compliment, then search twos sum for the rest of the array to see which pair along with the initial part gets closest to target
     if (parts[i] > target + 16)
       continue;
 
@@ -72,7 +70,7 @@ std::vector<int> threeSumMethod(
   return bestIndices;
 }
     
-void makeNewLayer (std::vector<double> &parts,
+void makeNewLayer (std::vector<double> &parts, //Build the layers by choosing best sum method considering our tolerances
                    std::vector<std::vector<double>> &layers,
                    int startIndex){
                        
@@ -147,20 +145,22 @@ void makeNewLayer (std::vector<double> &parts,
 }
 
 int main() {
+    //Test vector 1:
+//   std::vector<double> parts = {
+//       144,  144,  144,   144,   142,   142,   141.5, 139.5, 139,   136.5, 136.5,
+//       136,  119,  119,   119,   119,   119,   119,   119,   119,   119,   119,
+//       119,  119,  112.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110,   110,
+//       110,  110,  110,   73,    69,    69,    65,    64.5,  60.5,  60.5,  56.5,
+//       56,   54,   53.5,  53,    52.5,  52,    52,    52,    52,    51.5,  51.5,
+//       51,   51,   50.5,  50.5,  48,    29.5,  27.5,  27.5,  27.5,  27.5,  27.5,
+//       27.5, 27.5, 27.5,  27.5,  27.5,  27.5,  27.5,  27,    27,    27,    27,
+//       27,   27,   27,    27,    27,    27,    27,    27,    19.5,  19.5,  19.5,
+//       19.5, 19.5, 19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  15,    14.5,
+//       14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
+//       8.5,  8,    8,     8,     8,     8,     8,     8};
+    //Test vector 2:
   std::vector<double> parts = {
-      144,  144,  144,   144,   142,   142,   141.5, 139.5, 139,   136.5, 136.5,
-      136,  119,  119,   119,   119,   119,   119,   119,   119,   119,   119,
-      119,  119,  112.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110,   110,
-      110,  110,  110,   73,    69,    69,    65,    64.5,  60.5,  60.5,  56.5,
-      56,   54,   53.5,  53,    52.5,  52,    52,    52,    52,    51.5,  51.5,
-      51,   51,   50.5,  50.5,  48,    29.5,  27.5,  27.5,  27.5,  27.5,  27.5,
-      27.5, 27.5, 27.5,  27.5,  27.5,  27.5,  27.5,  27,    27,    27,    27,
-      27,   27,   27,    27,    27,    27,    27,    27,    19.5,  19.5,  19.5,
-      19.5, 19.5, 19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  15,    14.5,
-      14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
-      8.5,  8,    8,     8,     8,     8,     8,     8};
-// std::vector<double> parts = {
-//       124.5, 144, 8, 22.5, 34, 34, 49, 50.5, 64.5, 80.5, 86.5, 89, 100, 106.5, 111.5, 137.5, 140, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 8, 8, 11, 11, 11, 13.5, 20.5, 120.5};
+       8,10,10,18.5,22,22,22,25,25,29,29.5,30,31.5,33,35,37,40.5,44.5,45,45.5,45.5,45.5,46,46,47,48,53,62.5,68.5,69,69,81,84,88,92.5,92.5,92.5,92.5,94,96,104.5,132,138,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,10.5,10.5,10.5,10.5,25,25,25.5,25.5,76,76};
   std::sort(parts.begin(), parts.end(), std::greater<double>());
   
     std::vector<std::vector<double>>
@@ -175,7 +175,7 @@ int main() {
     double largeCount = count_if(parts.begin(), parts.end(),
                           [](double x){ return x >= 100; });
 
-    if ((midCount / largeCount) > 1) useMidBand = true;
+    if ((midCount / largeCount) > 1) useMidBand = true; //If there is a lot of middle pieces compared to the number of large pieces..
 
 int midStart = 0;
   while (!parts.empty()) {
@@ -187,23 +187,17 @@ int midStart = 0;
           }
       }
       while (parts[midStart] >= 47.5){
-      makeNewLayer(parts, layers, midStart);
+      makeNewLayer(parts, layers, midStart); //Then we start building the layers by using up the middle pieces first, to get rid of akward middle pieces
       }
       }
       else{
-          singleTolerance = 6;
+          singleTolerance = 6; //If there is not significantly more mid-length parts, we add looser tolerances, to allow these limited amount of middle pieces to be used up sooner with this new favorability to smaller groups (using more of these longer, mid-length pieces rather than many small ones), so we are not left with only akward middle pieces at the end
           doubleTolerance = 5;
       }
-    makeNewLayer(parts, layers, 0);
+    makeNewLayer(parts, layers, 0); //Otherwise, start building layers from largest piece
   }
 
-  // print layers
-  
-  std::sort(layers.begin(), layers.end(),
-          [](const std::vector<double>& a, const std::vector<double>& b) {
-              return a[0] > b[0];  // descending by first part
-          });
-          
+  // Print layers   
   std::cout << "\nLayers:\n\n";
 
   for (int i = 0; i < layers.size(); i++) {
