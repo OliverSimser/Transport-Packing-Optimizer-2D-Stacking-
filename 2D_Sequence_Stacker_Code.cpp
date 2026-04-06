@@ -120,26 +120,35 @@ void makeNewLayer (std::vector<double> &parts, //Build the layers by choosing be
       }
     }
     
-    if (parts.size() < 5){
-        double targetNew  =  144 - firstPart - best;
-        int addOneNew = singleMethod(parts, targetNew, 0);
-        std::vector<int> addTwoNew = twoSumMethod(parts, targetNew, 0);
-        double bestSingleNew =
-          (addOneNew == -1) ? -1: parts[addOneNew]; // (condition) ? value_it_becomes_if_true :
+    if (parts[0] <= 60){ //To use up extra space in the final layers if they full of the last small pieces of our list and has extra space
+        double currentSum = 0;
+        for (double v : layer)
+        currentSum += v;
+        
+        while (true){ //keep on adding parts until adding a new part will exceed 144
+            double targetNew = 144 - currentSum;
+            int addOneNew = singleMethod(parts, targetNew, 0);
+            std::vector<int> addTwoNew = twoSumMethod(parts, targetNew, 0);
+            double bestSingleNew =
+            (addOneNew == -1) ? -1: parts[addOneNew]; // (condition) ? value_it_becomes_if_true :
                                // value_it_becomes_if_false
-        double bestTwoNew =
-          (addTwoNew[0] == -1) ? -1 : parts[addTwoNew[0]] + parts[addTwoNew[1]];
-        double bestNew = std::max({bestSingleNew, bestTwoNew});
-        if (bestNew == -1){}
-        else if (bestNew == bestSingleNew) {
-        layer.push_back(parts[addOneNew]);
-        parts.erase(parts.begin() + addOneNew);
-      } else if (bestNew == bestTwoNew) {
-        layer.push_back(parts[addTwoNew[0]]);
-        layer.push_back(parts[addTwoNew[1]]);
-        parts.erase(parts.begin() + addTwoNew[1]);
-        parts.erase(parts.begin() + addTwoNew[0]);
-      }
+            double bestTwoNew =
+            (addTwoNew[0] == -1) ? -1 : parts[addTwoNew[0]] + parts[addTwoNew[1]];
+            double bestNew = std::max({bestSingleNew, bestTwoNew});
+            if (bestNew == -1) break;
+            if (bestNew == bestSingleNew) {
+                currentSum += parts[addOneNew];
+                layer.push_back(parts[addOneNew]);
+                parts.erase(parts.begin() + addOneNew);
+            }
+            else {
+                currentSum += parts[addTwoNew[0]] + parts[addTwoNew[1]];
+                layer.push_back(parts[addTwoNew[0]]);
+                layer.push_back(parts[addTwoNew[1]]);
+                parts.erase(parts.begin() + addTwoNew[1]);
+                parts.erase(parts.begin() + addTwoNew[0]);
+            }
+        }
     }
     layers.push_back(layer);
 }
@@ -159,8 +168,11 @@ int main() {
 //       14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
 //       8.5,  8,    8,     8,     8,     8,     8,     8};
     //Test vector 2:
-  std::vector<double> parts = {
-       8,10,10,18.5,22,22,22,25,25,29,29.5,30,31.5,33,35,37,40.5,44.5,45,45.5,45.5,45.5,46,46,47,48,53,62.5,68.5,69,69,81,84,88,92.5,92.5,92.5,92.5,94,96,104.5,132,138,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,10.5,10.5,10.5,10.5,25,25,25.5,25.5,76,76};
+//  std::vector<double> parts = {
+//       8,10,10,18.5,22,22,22,25,25,29,29.5,30,31.5,33,35,37,40.5,44.5,45,45.5,45.5,45.5,46,46,47,48,53,62.5,68.5,69,69,81,84,88,92.5,92.5,92.5,92.5,94,96,104.5,132,138,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,10.5,10.5,10.5,10.5,25,25,25.5,25.5,76,76};
+//  Test vector 3:
+    std::vector<double> parts = {
+       27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 120, 120, 120, 120, 120, 120, 144, 144, 144, 144, 144, 144, 144, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 12, 12, 12, 12, 12, 12, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 69, 69, 69, 69, 69, 69, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 12.5, 12.5, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 17, 18, 18, 19.5, 19.5, 20, 20, 20.5, 20.5, 20.5, 20.5, 21, 21, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 24.5, 27, 28, 29.5, 30.5, 31.5, 31.5, 31.5, 31.5, 31.5, 31.5, 32, 32, 32, 32, 32, 32, 32, 32, 32.5, 34, 35, 35, 35, 35.5, 37.5, 38.5, 40, 40.5, 40.5, 42, 42.5, 42.5, 42.5, 43.5, 46.5, 55, 57, 57.5, 61, 62, 64, 64, 67, 67.5, 67.5, 68.5, 68.5, 69.5, 69.5, 69.5, 69.5, 69.5, 69.5, 70, 72, 76, 84, 85.5, 91.5, 92, 92.5, 95.5, 99.5, 100.5, 117, 117, 117, 117, 117, 117, 120.5, 123, 124.5, 132, 132, 135, 135.5, 135.5, 136, 137.5, 138.5, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144};
   std::sort(parts.begin(), parts.end(), std::greater<double>());
   
     std::vector<std::vector<double>>
@@ -169,19 +181,28 @@ int main() {
     bool useMidBand{0};
   
     double midCount = count_if(parts.begin(), parts.end(), [](double x) {
-    return x >= 25 && x <= 85;});
+    return x >= 35 && x <= 85;});
 
                         
     double largeCount = count_if(parts.begin(), parts.end(),
-                          [](double x){ return x >= 100; });
+    [](double x){ return x >= 100 && x <= 136; });
 
-    if ((midCount / largeCount) > 1) useMidBand = true; //If there is a lot of middle pieces compared to the number of large pieces..
+    if (largeCount > 0 && midCount > largeCount * 1.5 && midCount > 15) useMidBand = true; //If there is a lot of middle pieces compared to the number of large pieces..
+    
+    double akwardPieceStartRange = 75;
+    
+    double upperMidCount = count_if(parts.begin(), parts.end(),
+    [](double x){ return x >= 75 && x <= 110; });
+    
+    if (upperMidCount > 15 && upperMidCount > largeCount * 0.55) { //If many of the akward pieces have length 110 to 75, start by using this first
+    akwardPieceStartRange = 108.5;
+    }
 
 int midStart = 0;
   while (!parts.empty()) {
       if (useMidBand){
       for(int i = 0; i < parts.size(); i++){
-          if(parts[i] <= 75){
+          if(parts[i] <= akwardPieceStartRange){ //Start sorting at the highest value found above of the start of the akward pieces
               midStart = i;
               break;
           }
