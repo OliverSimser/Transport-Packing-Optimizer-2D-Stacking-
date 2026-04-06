@@ -120,10 +120,11 @@ void makeNewLayer (std::vector<double> &parts, //Build the layers by choosing be
       }
     }
     
-    if (parts[0] <= 60){ //To use up extra space in the final layers if they full of the last small pieces of our list and has extra space
-        double currentSum = 0;
-        for (double v : layer)
-        currentSum += v;
+    double currentSum = 0;
+    for (double v : layer)
+    currentSum += v;
+    
+    if (currentSum <= 136){ //To use up extra space in the final layers if they full of the last small pieces of our list and has extra space
         
         while (true){ //keep on adding parts until adding a new part will exceed 144
             double targetNew = 144 - currentSum;
