@@ -217,30 +217,56 @@ Sub GroupSDsIntoSKIDs()
             ' Get collection for this height
             Dim items As Collection
             Set items = sdDict(hKey)
+            
+            ' === Declare variables for new Mode Selection ===
+            Dim midCount As Long
+            Dim largeCount As Long
+            Dim upperMidCount As Long
+            Dim akwardPieceStartRange As Double
+            Dim L As Double
+            Dim useMidBand As Boolean
+
             If items.Count = 0 Then GoTo NextHeight
         
             ' Sort descending by length
             SortItemsByLengthDesc items
         
-            ' === Mode Selection ===
-            Dim midCount As Long, largeCount As Long
-            Dim L As Double
-            Dim useMidBand As Boolean
-        
+            
+            ' === NEW MODE SELECTION LOGIC (C++ updated version) ===
+            
             midCount = 0
             largeCount = 0
-        
+            upperMidCount = 0
+            
             For i = 1 To items.Count
                 L = GetLen(items, i)
-                If L >= 25 And L <= 85 Then midCount = midCount + 1
-                If L >= 100 Then largeCount = largeCount + 1
+            
+                ' New midCount range: 35–85
+                If L >= 35 And L <= 85 Then midCount = midCount + 1
+            
+                ' New largeCount range: 100–136
+                If L >= 100 And L <= 136 Then largeCount = largeCount + 1
+            
+                ' Count for awkward start range consideration: 75–110
+                If L >= 75 And L <= 110 Then upperMidCount = upperMidCount + 1
             Next i
-        
-            If largeCount = 0 Then
-                useMidBand = False
-            Else
-                useMidBand = (midCount / largeCount) > 1
+            
+            ' Default
+            useMidBand = False
+            akwardPieceStartRange = 75#
+            
+            ' New midBand logic
+            If largeCount > 0 Then
+                If midCount > (largeCount * 1.5) And midCount > 15 Then
+                    useMidBand = True
+                End If
             End If
+            
+            ' New awkward range override
+            If upperMidCount > 15 And upperMidCount > (largeCount * 0.55) Then
+                akwardPieceStartRange = 108.5
+            End If
+            
         
             ' === Set tolerances ===
             If useMidBand Then
@@ -254,21 +280,31 @@ Sub GroupSDsIntoSKIDs()
             ' Prepare output collection
             Dim layers As New Collection
         
-            ' === MODE A: Mid-band first ===
+            
+            ' === NEW midStart logic ===
+            Dim midStart As Long
+            midStart = 0
+            
             If useMidBand Then
-                Dim midStart As Long
-                midStart = FirstIndexLE(items, 75#)
-        
-                If midStart > 0 Then
-                    Do While midStart <= items.Count
-                        If GetLen(items, midStart) >= 47.5 Then
-                            layers.Add MakeNewLayer(items, midStart, MAX_LEN)
-                        Else
-                            Exit Do
-                        End If
-                    Loop
-                End If
+                For i = 1 To items.Count
+                    If GetLen(items, i) <= akwardPieceStartRange Then
+                        midStart = i
+                        Exit For
+                    End If
+                Next i
             End If
+            
+            ' === MODE A: Mid-band first (updated start point) ===
+            If useMidBand And midStart > 0 Then
+                Do While midStart <= items.Count
+                    If GetLen(items, midStart) >= 47.5 Then
+                        layers.Add MakeNewLayer(items, midStart, MAX_LEN)
+                    Else
+                        Exit Do
+                    End If
+                Loop
+            End If
+
         
             ' === MODE A + MODE B: ALWAYS create one top-down layer next ===
             If items.Count > 0 Then
@@ -594,6 +630,7 @@ Private Function MakeNewLayer(ByRef items As Collection, ByVal startIndex As Lon
     Dim arr() As Object
     Dim used() As Boolean
     Dim i As Long
+    Dim currentTotal As Double
 
     ' Copy collection to array
     ReDim arr(1 To n)
@@ -679,55 +716,77 @@ bestTotal = Max3(bestSingle, bestTwo, bestThree)
 
 FinishPrimary:
 
-   ' === 4. TOP-OFF SAFELY (ARRAY INDEXING) ===
-Dim currentTotal As Double
+' === 4. NEW TOP-OFF LOGIC (C++ MATCH) ===
 currentTotal = SumLayer(layer)
 
-If n - CountTrue(used) < 5 Then
-    Dim remainingTarget As Double
-    remainingTarget = MAX_LEN - currentTotal
-
-    Dim topSingleIdx As Long, topTwoIdx(1 To 2) As Long
-    Dim topSingle As Double, topTwo As Double
-
-    ' BEST SINGLE
-    topSingleIdx = FindBestSingle(arr, used, remainingTarget, 1)
-
-    ' BEST TWO (use variant temp!)
-    Dim tmpTop2 As Variant
-    tmpTop2 = FindBestTwo(arr, used, remainingTarget, 1)
-    topTwoIdx(1) = tmpTop2(1)
-    topTwoIdx(2) = tmpTop2(2)
-
-    If topSingleIdx > 0 Then
-        topSingle = arr(topSingleIdx)("Length")
-    Else
-        topSingle = -1#
+' parts[] is represented by arr() with used() flags
+' Find the largest unused part (arr is sorted DESC)
+Dim largestIdx As Long
+largestIdx = -1
+For i = 1 To n
+    If Not used(i) Then
+        largestIdx = i
+        Exit For
     End If
+Next i
 
-    If topTwoIdx(1) > 0 Then
-        topTwo = arr(topTwoIdx(1))("Length") + arr(topTwoIdx(2))("Length")
-    Else
-        topTwo = -1#
-    End If
-
-    Dim bestTop As Double
-    bestTop = Application.WorksheetFunction.Max(topSingle, topTwo)
-
-    ' ADD ONLY IF IT FITS
-    If bestTop = topSingle And bestTop >= 0 Then
-        If currentTotal + topSingle <= MAX_LEN Then
-            used(topSingleIdx) = True
-            layer.Add arr(topSingleIdx)
-        End If
-
-    ElseIf bestTop = topTwo And bestTop >= 0 Then
-        If currentTotal + topTwo <= MAX_LEN Then
-            used(topTwoIdx(1)) = True
-            used(topTwoIdx(2)) = True
-            layer.Add arr(topTwoIdx(1))
-            layer.Add arr(topTwoIdx(2))
-        End If
+If largestIdx > 0 Then
+    If arr(largestIdx)("Length") <= 60 Then
+        
+        ' === Begin while loop ===
+        Do While True
+            
+            Dim targetNew As Double
+            targetNew = MAX_LEN - currentTotal
+            
+            ' Best single
+            Dim addOneNew As Long
+            addOneNew = FindBestSingle(arr, used, targetNew, 1)
+            
+            ' Best two
+            Dim addTwoNew As Variant
+            addTwoNew = FindBestTwo(arr, used, targetNew, 1)
+            
+            Dim bestSingleNew As Double
+            If addOneNew > 0 Then
+                bestSingleNew = arr(addOneNew)("Length")
+            Else
+                bestSingleNew = -1
+            End If
+            
+            Dim bestTwoNew As Double
+            If addTwoNew(1) > 0 Then
+                bestTwoNew = arr(addTwoNew(1))("Length") + arr(addTwoNew(2))("Length")
+            Else
+                bestTwoNew = -1
+            End If
+            
+            Dim bestNew As Double
+            bestNew = Application.WorksheetFunction.Max(bestSingleNew, bestTwoNew)
+            
+            If bestNew = -1 Then
+                Exit Do   ' nothing fits anymore
+            End If
+            
+            If bestNew = bestSingleNew Then
+                ' add single
+                used(addOneNew) = True
+                layer.Add arr(addOneNew)
+                currentTotal = currentTotal + arr(addOneNew)("Length")
+            Else
+                ' add two
+                used(addTwoNew(1)) = True
+                used(addTwoNew(2)) = True
+                
+                layer.Add arr(addTwoNew(1))
+                layer.Add arr(addTwoNew(2))
+                
+                currentTotal = currentTotal + _
+                    arr(addTwoNew(1))("Length") + arr(addTwoNew(2))("Length")
+            End If
+        
+        Loop ' end while
+        
     End If
 End If
 
@@ -1224,3 +1283,4 @@ Sub CreateCoversSheet()
     
 
 End Sub
+
