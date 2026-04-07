@@ -1,8 +1,8 @@
 #include <iostream>
 #include <vector>
 
-double singleTolerance = 3; //Tolerances to favor smaller groups, thus using up less "glueing" pieces
-double doubleTolerance = 2;
+double singleTolerance = 3.5; //Tolerances to favor smaller groups, thus using up less "glueing" pieces
+double doubleTolerance = 2.5;
 
 int singleMethod(
     const std::vector<double> &parts,
@@ -156,66 +156,90 @@ void makeNewLayer (std::vector<double> &parts, //Build the layers by choosing be
 
 int main() {
     //Test vector 1:
-//   std::vector<double> parts = {
-//       144,  144,  144,   144,   142,   142,   141.5, 139.5, 139,   136.5, 136.5,
-//       136,  119,  119,   119,   119,   119,   119,   119,   119,   119,   119,
-//       119,  119,  112.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110,   110,
-//       110,  110,  110,   73,    69,    69,    65,    64.5,  60.5,  60.5,  56.5,
-//       56,   54,   53.5,  53,    52.5,  52,    52,    52,    52,    51.5,  51.5,
-//       51,   51,   50.5,  50.5,  48,    29.5,  27.5,  27.5,  27.5,  27.5,  27.5,
-//       27.5, 27.5, 27.5,  27.5,  27.5,  27.5,  27.5,  27,    27,    27,    27,
-//       27,   27,   27,    27,    27,    27,    27,    27,    19.5,  19.5,  19.5,
-//       19.5, 19.5, 19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  15,    14.5,
-//       14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
-//       8.5,  8,    8,     8,     8,     8,     8,     8};
-    //Test vector 2:
+    std::vector<double> parts = {
+        144,  144,  144,   144,   142,   142,   141.5, 139.5, 139,   136.5, 136.5,
+        136,  119,  119,   119,   119,   119,   119,   119,   119,   119,   119,
+        119,  119,  112.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110,   110,
+        110,  110,  110,   73,    69,    69,    65,    64.5,  60.5,  60.5,  56.5,
+        56,   54,   53.5,  53,    52.5,  52,    52,    52,    52,    51.5,  51.5,
+        51,   51,   50.5,  50.5,  48,    29.5,  27.5,  27.5,  27.5,  27.5,  27.5,
+        27.5, 27.5, 27.5,  27.5,  27.5,  27.5,  27.5,  27,    27,    27,    27,
+        27,   27,   27,    27,    27,    27,    27,    27,    19.5,  19.5,  19.5,
+        19.5, 19.5, 19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  19.5,  15,    14.5,
+        14,   14,   12.5,  12,    11.5,  11.5,  11,    11,    9,     9,     8.5,
+        8.5,  8,    8,     8,     8,     8,     8,     8};
+//  Test vector 2:
 //  std::vector<double> parts = {
 //       8,10,10,18.5,22,22,22,25,25,29,29.5,30,31.5,33,35,37,40.5,44.5,45,45.5,45.5,45.5,46,46,47,48,53,62.5,68.5,69,69,81,84,88,92.5,92.5,92.5,92.5,94,96,104.5,132,138,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,144,10.5,10.5,10.5,10.5,25,25,25.5,25.5,76,76};
 //  Test vector 3:
-    std::vector<double> parts = {
-       27.5, 27.5, 27.5, 27.5, 27.5, 27.5, 110.5, 110.5, 110.5, 110.5, 110.5, 110.5, 120, 120, 120, 120, 120, 120, 144, 144, 144, 144, 144, 144, 144, 8.5, 8.5, 8.5, 8.5, 8.5, 8.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 12, 12, 12, 12, 12, 12, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 69, 69, 69, 69, 69, 69, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 12.5, 12.5, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 17, 18, 18, 19.5, 19.5, 20, 20, 20.5, 20.5, 20.5, 20.5, 21, 21, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 24.5, 27, 28, 29.5, 30.5, 31.5, 31.5, 31.5, 31.5, 31.5, 31.5, 32, 32, 32, 32, 32, 32, 32, 32, 32.5, 34, 35, 35, 35, 35.5, 37.5, 38.5, 40, 40.5, 40.5, 42, 42.5, 42.5, 42.5, 43.5, 46.5, 55, 57, 57.5, 61, 62, 64, 64, 67, 67.5, 67.5, 68.5, 68.5, 69.5, 69.5, 69.5, 69.5, 69.5, 69.5, 70, 72, 76, 84, 85.5, 91.5, 92, 92.5, 95.5, 99.5, 100.5, 117, 117, 117, 117, 117, 117, 120.5, 123, 124.5, 132, 132, 135, 135.5, 135.5, 136, 137.5, 138.5, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144};
-  std::sort(parts.begin(), parts.end(), std::greater<double>());
+//  std::vector<double> parts = {
+//       22.5, 85, 98.5, 98.5, 98.5, 98.5, 98.5, 100.5, 102.5, 112.5, 116, 116, 119, 122, 122, 126, 126, 126, 126.5, 128, 139, 139, 142, 142, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 8, 8, 8.5, 8.5, 9, 9.5, 10.5, 11, 11, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 12, 12, 12.5, 12.5, 13, 13.5, 14.5, 16.5, 17.5, 19, 23.5, 24, 24, 24.5, 25.5, 26, 27, 31.5, 37.5, 42.5, 43.5, 50, 65, 67.5, 69, 75, 77, 77, 77, 77, 77, 78, 83, 85, 90, 112, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 8, 8.5, 8.5, 8.5, 8.5, 8.5, 9, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 20.5, 64.5, 65.5, 77.5, 78, 88, 92, 107};
+    std::sort(parts.begin(), parts.end(), std::greater<double>());
   
     std::vector<std::vector<double>>
     layers; // a vector that holds vectors for each layer
   
     bool useMidBand{0};
+    
+    double total = parts.size();
   
     double midCount = count_if(parts.begin(), parts.end(), [](double x) {
-    return x >= 35 && x <= 85;});
+    return x >= 40 && x <= 90;});
 
                         
-    double largeCount = count_if(parts.begin(), parts.end(),
-    [](double x){ return x >= 100 && x <= 136; });
+    double awkwardCount = count_if(parts.begin(), parts.end(),
+    [](double x){ return x >= 90 && x <= 118; });
 
-    if (largeCount > 0 && midCount > largeCount * 1.5 && midCount > 15) useMidBand = true; //If there is a lot of middle pieces compared to the number of large pieces..
+    if (midCount > total * 0.30 || awkwardCount > total * 0.95) useMidBand = true; //If there is a lot of middle pieces compared to the number of large pieces..
     
-    double akwardPieceStartRange = 75;
+    double awkwardPieceStartRange = 80;
+    double smallSum = 0;
+    int smallCount = 0;
+
+    for (double x : parts) {
+        if (x < 40) {
+            smallSum += x;
+            smallCount++;
+        }
+    }
     
-    double upperMidCount = count_if(parts.begin(), parts.end(),
-    [](double x){ return x >= 75 && x <= 110; });
+    if (smallCount > 0){
+        double avgSmall = smallSum / smallCount;
+        double smallRatio = static_cast<double>(smallCount) / parts.size(); 
+        awkwardPieceStartRange = 144 - (avgSmall * 4.5 * smallRatio); //If most of the small pieces are 8 for example, then we will start sorting our layers, using up awkward pieces that are much higher, like at 132, as there are more small pieces like 8 to help deal with this, so we will deal with it sooner
+        if (awkwardPieceStartRange < 85) awkwardPieceStartRange = 85;
+        if (awkwardPieceStartRange > 124) awkwardPieceStartRange = 124;
+    }
     
-    if (upperMidCount > 15 && upperMidCount > largeCount * 0.55) { //If many of the akward pieces have length 110 to 75, start by using this first
-    akwardPieceStartRange = 108.5;
+    if (smallCount > total * 0.4) {
+        // MANY glue pieces → pack tightly
+        singleTolerance = 2.5;
+        doubleTolerance = 2;
+    }
+    else if (awkwardCount > total * 0.15) {
+        // MANY awkward pieces → need flexibility
+        singleTolerance = 5.5;
+        doubleTolerance = 4.5;
+    }
+    else if (awkwardCount > total * 0.1) {
+        // MANY awkward pieces → need flexibility
+        singleTolerance = 4;
+        doubleTolerance = 3;
     }
 
-int midStart = 0;
-  while (!parts.empty()) {
-      if (useMidBand){
-      for(int i = 0; i < parts.size(); i++){
-          if(parts[i] <= akwardPieceStartRange){ //Start sorting at the highest value found above of the start of the akward pieces
-              midStart = i;
-              break;
-          }
-      }
-      while (parts[midStart] >= 47.5){
-      makeNewLayer(parts, layers, midStart); //Then we start building the layers by using up the middle pieces first, to get rid of akward middle pieces
-      }
-      }
-      else{
-          singleTolerance = 6; //If there is not significantly more mid-length parts, we add looser tolerances, to allow these limited amount of middle pieces to be used up sooner with this new favorability to smaller groups (using more of these longer, mid-length pieces rather than many small ones), so we are not left with only akward middle pieces at the end
-          doubleTolerance = 5;
-      }
+    int midStart = 0;
+    while (!parts.empty()) {
+        if (useMidBand){
+            for(int i = 0; i < parts.size(); i++){
+                if(parts[i] <= awkwardPieceStartRange){ //Start sorting at the highest value found above of the start of the awkward pieces
+                midStart = i;
+                break;
+                }
+            }
+            while (parts[midStart] >= 47.5){
+                makeNewLayer(parts, layers, midStart); //Then we start building the layers by using up the middle pieces first, to get rid of awkward middle pieces
+            }
+        }
     makeNewLayer(parts, layers, 0); //Otherwise, start building layers from largest piece
   }
 
