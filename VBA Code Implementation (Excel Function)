@@ -19,7 +19,7 @@ Sub ParseAndGroupCBAParts()
 
     Set targetWS = Worksheets.Add(After:=sourceWS)
     targetWS.Name = sheetName
-
+    
     targetWS.Cells(1, 1).Value = "Full Part Number"
     targetWS.Cells(1, 2).Value = "Project Number"
     targetWS.Cells(1, 3).Value = "Height (in)"
@@ -106,7 +106,32 @@ Sub ParseAndGroupCBAParts()
         .Borders.Weight = xlThin
     End With
     Call CreateCoversSheet
-    Call GroupSDsIntoSKIDs
+    
+    Dim blockCount As Long
+Dim checkCol As Long
+Dim lastRowCheck As Long
+
+checkCol = 1
+blockCount = 0
+
+Do While sourceWS.Cells(1, checkCol).Value <> ""
+
+    ' Check if this block actually has data under header
+    lastRowCheck = sourceWS.Cells(sourceWS.Rows.Count, checkCol).End(xlUp).Row
+    
+    If lastRowCheck > 1 Then
+        ' There is real data (not just header)
+        blockCount = blockCount + 1
+    End If
+
+    checkCol = checkCol + 3
+Loop
+    
+    If blockCount > 1 Then
+        Call GroupSDsIntoSKIDs_OLD   ' <- your old VBA
+    Else
+        Call GroupSDsIntoSKIDs       ' <- your new optimized one
+    End If
     
     Dim wsSkids As Worksheet
     Set wsSkids = ThisWorkbook.Sheets("SKIDs")
@@ -218,63 +243,87 @@ Sub GroupSDsIntoSKIDs()
             Dim items As Collection
             Set items = sdDict(hKey)
             
-            ' === Declare variables for new Mode Selection ===
-            Dim midCount As Long
-            Dim largeCount As Long
-            Dim upperMidCount As Long
-            Dim akwardPieceStartRange As Double
-            Dim L As Double
             Dim useMidBand As Boolean
-
+            
             If items.Count = 0 Then GoTo NextHeight
         
             ' Sort descending by length
             SortItemsByLengthDesc items
         
             
-            ' === NEW MODE SELECTION LOGIC (C++ updated version) ===
+            ' === NEW MID-BAND & TOLERANCE LOGIC (Final Spec) ===
+            Dim total As Long
+            Dim midCount As Long
+            Dim awkwardCount As Long
+            Dim smallCount As Long
+            Dim smallSum As Double
+            Dim awkwardPieceStartRange As Double
+            Dim avgSmall As Double
+            Dim smallRatio As Double
+            Dim L As Double
             
+            total = items.Count
             midCount = 0
-            largeCount = 0
-            upperMidCount = 0
+            awkwardCount = 0
+            smallCount = 0
+            smallSum = 0#
+            useMidBand = False
             
+            ' --- Count classification ---
             For i = 1 To items.Count
                 L = GetLen(items, i)
             
-                ' New midCount range: 35–85
-                If L >= 35 And L <= 85 Then midCount = midCount + 1
+                ' mid = 40–90
+                If L >= 40 And L <= 90 Then midCount = midCount + 1
             
-                ' New largeCount range: 100–136
-                If L >= 100 And L <= 136 Then largeCount = largeCount + 1
+                ' awkward = 90–118
+                If L >= 90 And L <= 118 Then awkwardCount = awkwardCount + 1
             
-                ' Count for awkward start range consideration: 75–110
-                If L >= 75 And L <= 110 Then upperMidCount = upperMidCount + 1
+                ' small = < 40
+                If L < 40 Then
+                    smallSum = smallSum + L
+                    smallCount = smallCount + 1
+                End If
             Next i
             
-            ' Default
-            useMidBand = False
-            akwardPieceStartRange = 75#
-            
-            ' New midBand logic
-            If largeCount > 0 Then
-                If midCount > (largeCount * 1.5) And midCount > 15 Then
-                    useMidBand = True
-                End If
+            ' --- Decide useMidBand ---
+            If midCount > total * 0.3 Or awkwardCount > total * 0.95 Then
+                useMidBand = True
             End If
             
-            ' New awkward range override
-            If upperMidCount > 15 And upperMidCount > (largeCount * 0.55) Then
-                akwardPieceStartRange = 108.5
+            ' --- Default tolerances (NEW DEFAULTS) ---
+            singleTolerance = 3.5
+            doubleTolerance = 2.5
+            
+            ' --- Compute awkwardPieceStartRange ---
+            awkwardPieceStartRange = 80#
+            
+            If smallCount > 0 Then
+                avgSmall = smallSum / smallCount
+                smallRatio = smallCount / total
+                awkwardPieceStartRange = 144# - (avgSmall * 4.5 * smallRatio)
+                
+                If awkwardPieceStartRange < 85# Then _
+                    awkwardPieceStartRange = 85#
+                
+                If awkwardPieceStartRange > 124# Then _
+                    awkwardPieceStartRange = 124#
+
             End If
             
-        
-            ' === Set tolerances ===
-            If useMidBand Then
-                singleTolerance = 3
-                doubleTolerance = 2
-            Else
-                singleTolerance = 6
-                doubleTolerance = 5
+            ' --- Dynamic tolerance overrides ---
+            If smallCount > total * 0.4 Then
+                ' MANY glue pieces ? pack tightly
+                singleTolerance = 2.5
+                doubleTolerance = 2#
+            ElseIf awkwardCount > total * 0.15 Then
+                ' MANY awkward pieces ? flexibility
+                singleTolerance = 5.5
+                doubleTolerance = 4.5
+            ElseIf awkwardCount > total * 0.1 Then
+                ' MANY awkward pieces ? flexibility
+                singleTolerance = 4
+                doubleTolerance = 3
             End If
         
             ' Prepare output collection
@@ -287,7 +336,7 @@ Sub GroupSDsIntoSKIDs()
             
             If useMidBand Then
                 For i = 1 To items.Count
-                    If GetLen(items, i) <= akwardPieceStartRange Then
+                    If GetLen(items, i) <= awkwardPieceStartRange Then
                         midStart = i
                         Exit For
                     End If
@@ -323,29 +372,29 @@ Sub GroupSDsIntoSKIDs()
             Dim sortedLayers As New Collection
             Dim used() As Boolean
             Dim bestIdx As Long
-            
+
             ' Unique local variable names (so no collisions)
             Dim totLen As Double
             Dim pieceCount As Long
             Dim layerRef As Collection
-            
+
             ReDim used(1 To layers.Count)
-            
+
             Do While sortedLayers.Count < layers.Count
                 Dim bestTotal As Double: bestTotal = -1
                 Dim bestPieces As Long: bestPieces = 9999
-            
+
                 bestIdx = 0
-            
+
                 ' Use existing "i" from the main method
                 For i = 1 To layers.Count
                     If Not used(i) Then
                         ' IMPORTANT: do NOT redeclare "lay"
                         Set layerRef = layers(i)
-            
+
                         totLen = SumLayer(layerRef)
                         pieceCount = layerRef.Count
-            
+
                         ' Highest total first, ties ? fewest pieces
                         If (totLen > bestTotal) Or _
                            (totLen = bestTotal And pieceCount < bestPieces) Then
@@ -355,11 +404,11 @@ Sub GroupSDsIntoSKIDs()
                         End If
                     End If
                 Next i
-            
+
                 used(bestIdx) = True
                 sortedLayers.Add layers(bestIdx)
             Loop
-            
+
             Set layers = sortedLayers
 
 
@@ -731,62 +780,62 @@ For i = 1 To n
 Next i
 
 If largestIdx > 0 Then
-    If arr(largestIdx)("Length") <= 60 Then
-        
-        ' === Begin while loop ===
-        Do While True
-            
+    
+    currentTotal = SumLayer(layer)
+    
+    If currentTotal <= 136# Then   ' allow filling only if there is meaningful space left
+    
+        Do While True   ' keep filling until no single or pair fits
+    
             Dim targetNew As Double
             targetNew = MAX_LEN - currentTotal
-            
+    
             ' Best single
             Dim addOneNew As Long
             addOneNew = FindBestSingle(arr, used, targetNew, 1)
-            
+    
             ' Best two
             Dim addTwoNew As Variant
             addTwoNew = FindBestTwo(arr, used, targetNew, 1)
-            
+    
             Dim bestSingleNew As Double
             If addOneNew > 0 Then
                 bestSingleNew = arr(addOneNew)("Length")
             Else
-                bestSingleNew = -1
+                bestSingleNew = -1#
             End If
-            
+    
             Dim bestTwoNew As Double
             If addTwoNew(1) > 0 Then
-                bestTwoNew = arr(addTwoNew(1))("Length") + arr(addTwoNew(2))("Length")
+                bestTwoNew = arr(addTwoNew(1))("Length") + _
+                             arr(addTwoNew(2))("Length")
             Else
-                bestTwoNew = -1
+                bestTwoNew = -1#
             End If
-            
+    
             Dim bestNew As Double
             bestNew = Application.WorksheetFunction.Max(bestSingleNew, bestTwoNew)
-            
-            If bestNew = -1 Then
-                Exit Do   ' nothing fits anymore
-            End If
-            
+    
+            ' nothing else fits
+            If bestNew = -1# Then Exit Do
+    
+            ' add best option
             If bestNew = bestSingleNew Then
-                ' add single
                 used(addOneNew) = True
                 layer.Add arr(addOneNew)
                 currentTotal = currentTotal + arr(addOneNew)("Length")
             Else
-                ' add two
                 used(addTwoNew(1)) = True
                 used(addTwoNew(2)) = True
-                
+    
                 layer.Add arr(addTwoNew(1))
                 layer.Add arr(addTwoNew(2))
-                
+    
                 currentTotal = currentTotal + _
                     arr(addTwoNew(1))("Length") + arr(addTwoNew(2))("Length")
             End If
-        
-        Loop ' end while
-        
+    
+        Loop
     End If
 End If
 
@@ -1032,6 +1081,7 @@ Sub SequenceSkids()
                     layerParts.Add r
                     j = r + 1
                     Do While wsSkids.Cells(j, startCol).Value = "" And wsSkids.Cells(j, startCol + 1).Value <> ""
+                        And Left(wsSkidding.Cells(j + 1, startCol).Value, 4) <> "SKID"
                         layerParts.Add j
                         j = j + 1
                     Loop
@@ -1283,4 +1333,375 @@ Sub CreateCoversSheet()
     
 
 End Sub
+
+Sub GroupSDsIntoSKIDs_OLD()
+    Dim wsParsed As Worksheet, wsSkidding As Worksheet, wsSkids As Worksheet, wsCovers As Worksheet
+    Dim lastRow As Long, i As Long, j As Long
+    Dim part As String, heightVal As String, lengthVal As Double, qty As Long
+    Dim sdDict As Object, item As Object
+    Dim chartRow As Long
+    Dim chartStartCol As Long
+
+    Set wsParsed = ThisWorkbook.Sheets("Parsed Parts")
+    Set wsCovers = ThisWorkbook.Sheets("COVERS")
+    
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Worksheets("SKIDDING").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    Set wsSkidding = Worksheets.Add(After:=wsParsed)
+    wsSkidding.Name = "SKIDDING"
+    
+    
+    Dim totalSkids As Long
+    Dim currentSkid As Long
+
+    currentSkid = 1
+    totalSkids = 0
+
+
+
+    lastRow = wsParsed.Cells(wsParsed.Rows.Count, "A").End(xlUp).Row
+
+
+    Dim layerLimit As Object
+    Set layerLimit = CreateObject("Scripting.Dictionary")
+    layerLimit.Add "06", 14
+    layerLimit.Add "08", 14
+    layerLimit.Add "10", 12
+    layerLimit.Add "12", 10
+
+    Dim thin As XlBorderWeight: thin = xlThin
+    Dim bold As XlBorderWeight: bold = xlMedium
+    Dim startCol As Long: startCol = 1
+
+    Dim hKey As Variant
+    Dim heightKeys As Variant
+    heightKeys = Array("12", "10", "08", "06") ' reversed order
+    
+    Dim maxSection As Long
+    maxSection = Application.WorksheetFunction.Max(wsParsed.Range("I2:I" & lastRow))
+    
+    Dim sectionNum As Long
+    For sectionNum = 1 To maxSection
+    
+        Set sdDict = CreateObject("Scripting.Dictionary")
+        sdDict.Add "06", New Collection
+        sdDict.Add "08", New Collection
+        sdDict.Add "10", New Collection
+        sdDict.Add "12", New Collection
+    
+        For i = 2 To lastRow
+            part = wsParsed.Cells(i, 1).Value
+            heightVal = Format(wsParsed.Cells(i, 3).Value, "00")
+            lengthVal = wsParsed.Cells(i, 6).Value
+            qty = wsParsed.Cells(i, 8).Value
+            Dim section As Long
+            section = wsParsed.Cells(i, 9).Value ' Column I
+            
+            If sdDict.Exists(heightVal) And IsNumeric(lengthVal) And IsNumeric(qty) And section = sectionNum Then
+                For j = 1 To qty
+                Set item = CreateObject("Scripting.Dictionary")
+                item("Part") = part
+                item("Length") = lengthVal
+                item("Height") = heightVal
+                sdDict(heightVal).Add item
+            Next j
+            End If
+        Next i
+    
+        For Each hKey In heightKeys
+            Dim originalList As Collection: Set originalList = sdDict(hKey)
+            Dim sortedList As Collection: Set sortedList = New Collection
+            Dim offsetList As Collection: Set offsetList = New Collection
+            Dim heightOffset As Long
+            heightOffset = (12 - CLng(hKey)) \ 2 * 144 ' Example: for "10" offset = 144, for "08" offset = 288, etc.
+    
+            Dim k As Long
+            For k = 1 To originalList.Count
+                Set item = CreateObject("Scripting.Dictionary")
+                item("Part") = originalList(k)("Part")
+                item("Height") = originalList(k)("Height")
+                item("Length") = originalList(k)("Length") - heightOffset
+                offsetList.Add item
+            Next k
+            Set originalList = offsetList
+            While originalList.Count > 0
+                Dim maxIndex As Long: maxIndex = 1
+                For i = 2 To originalList.Count
+                    If originalList(i)("Length") > originalList(maxIndex)("Length") Then maxIndex = i
+                Next i
+                sortedList.Add originalList(maxIndex)
+                originalList.Remove maxIndex
+            Wend
+    
+            Do While sortedList.Count > 0
+                Dim rowPointer As Long: rowPointer = 1
+                Dim topRow As Long: topRow = 1
+                Dim layerCount As Long: layerCount = 0
+    
+                With wsSkidding.Range(wsSkidding.Cells(rowPointer, startCol), wsSkidding.Cells(rowPointer, startCol + 1))
+                    .Merge
+                    .Value = "SKID" & currentSkid & " - Section: " & sectionNum
+                    .Font.bold = True
+                    .HorizontalAlignment = xlCenter
+                    .VerticalAlignment = xlCenter
+                End With
+                rowPointer = rowPointer + 1
+    
+                Do While layerCount < layerLimit(hKey) And sortedList.Count > 0
+                    Dim combo As Collection: Set combo = New Collection
+                    Dim comboTotal As Double: comboTotal = 0
+    
+                    For i = 1 To sortedList.Count
+                        If comboTotal + sortedList(i)("Length") <= 144 Then
+                            combo.Add sortedList(i)
+                            comboTotal = comboTotal + sortedList(i)("Length")
+                            sortedList.Remove i
+                            Exit For
+                        End If
+                    Next i
+    
+                    i = 1
+                    Do While i <= sortedList.Count
+                        If comboTotal + sortedList(i)("Length") <= 144 Then
+                            combo.Add sortedList(i)
+                            comboTotal = comboTotal + sortedList(i)("Length")
+                            sortedList.Remove i
+                            i = 1
+                        Else
+                            i = i + 1
+                        End If
+                    Loop
+    
+                    With wsSkidding.Cells(rowPointer, startCol)
+                        .Value = "L" & (layerCount + 1)
+                        .Font.bold = True
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                        .Borders(xlEdgeTop).LineStyle = xlContinuous
+                        .Borders(xlEdgeTop).Weight = bold
+                        .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                        .Borders(xlEdgeLeft).Weight = thin
+                        .Borders(xlEdgeRight).LineStyle = xlContinuous
+                        .Borders(xlEdgeRight).Weight = thin
+                        .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                        .Borders(xlEdgeBottom).Weight = thin
+                    End With
+                    With wsSkidding.Cells(rowPointer, startCol + 1)
+                        .Value = combo(1)("Part")
+                        With wsSkidding.Cells(rowPointer, startCol + 2)
+                            .Value = comboTotal
+                            .NumberFormat = "0.00"
+                            .HorizontalAlignment = xlCenter
+                            .VerticalAlignment = xlCenter
+                            .Borders(xlEdgeTop).LineStyle = xlContinuous
+                            .Borders(xlEdgeTop).Weight = bold
+                            .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                            .Borders(xlEdgeLeft).Weight = thin
+                            .Borders(xlEdgeRight).LineStyle = xlContinuous
+                            .Borders(xlEdgeRight).Weight = thin
+                            .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                            .Borders(xlEdgeBottom).Weight = thin
+                        End With
+                        .HorizontalAlignment = xlCenter
+                        .VerticalAlignment = xlCenter
+                        .Borders(xlEdgeTop).LineStyle = xlContinuous
+                        .Borders(xlEdgeTop).Weight = bold
+                        .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                        .Borders(xlEdgeLeft).Weight = thin
+                        .Borders(xlEdgeRight).LineStyle = xlContinuous
+                        .Borders(xlEdgeRight).Weight = thin
+                        .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                        .Borders(xlEdgeBottom).Weight = thin
+                    End With
+                    rowPointer = rowPointer + 1
+    
+                    For j = 2 To combo.Count
+                        With wsSkidding.Cells(rowPointer, startCol)
+                            .HorizontalAlignment = xlCenter
+                            .VerticalAlignment = xlCenter
+                            .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                            .Borders(xlEdgeLeft).Weight = thin
+                            .Borders(xlEdgeRight).LineStyle = xlContinuous
+                            .Borders(xlEdgeRight).Weight = thin
+                            .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                            .Borders(xlEdgeBottom).Weight = thin
+                        End With
+                        With wsSkidding.Cells(rowPointer, startCol + 1)
+                            .Value = combo(j)("Part")
+                            .HorizontalAlignment = xlCenter
+                            .VerticalAlignment = xlCenter
+                            .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                            .Borders(xlEdgeLeft).Weight = thin
+                            .Borders(xlEdgeRight).LineStyle = xlContinuous
+                            .Borders(xlEdgeRight).Weight = thin
+                            .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                            .Borders(xlEdgeBottom).Weight = thin
+                        End With
+                        With wsSkidding.Cells(rowPointer, startCol + 2)
+                            .Value = ""
+                            .Borders(xlEdgeLeft).LineStyle = xlContinuous
+                            .Borders(xlEdgeLeft).Weight = thin
+                            .Borders(xlEdgeRight).LineStyle = xlContinuous
+                            .Borders(xlEdgeRight).Weight = thin
+                            .Borders(xlEdgeBottom).LineStyle = xlContinuous
+                            .Borders(xlEdgeBottom).Weight = thin
+                        End With
+                        rowPointer = rowPointer + 1
+                    Next j
+    
+    
+                    layerCount = layerCount + 1
+                Loop
+    
+                With wsSkidding
+                    .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeTop).Weight = bold
+                    .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeBottom).Weight = bold
+                    .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeLeft).Weight = bold
+                    .Range(.Cells(topRow, startCol), .Cells(rowPointer - 1, startCol + 1)).Borders(xlEdgeRight).Weight = bold
+                End With
+    
+                wsSkidding.Columns(startCol).ColumnWidth = 5.78
+                wsSkidding.Columns(startCol + 1).ColumnWidth = 34.78
+                wsSkidding.Columns(startCol + 2).ColumnWidth = 9.78
+                wsSkidding.Range(wsSkidding.Cells(topRow, startCol), wsSkidding.Cells(rowPointer - 1, startCol + 1)).RowHeight = 20
+                currentSkid = currentSkid + 1
+                startCol = startCol + 4
+            Loop
+        
+        Next hKey
+    Next sectionNum
+        
+    
+    Dim numSkids As Long, searchCol As Long
+    Dim skidColStart As Long, skidColEnd As Long
+    Dim maxRow As Long, curSkidRow As Long
+    Dim valuesDict As Object, val As Variant
+    Dim tempRange As Range
+    Dim rowLookup As Object
+    
+    numSkids = currentSkid - 1
+    
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    Worksheets("SKIDs").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    Set wsSkids = Worksheets.Add(After:=wsCovers)
+    wsSkids.Name = "SKIDs"
+        
+    startCol = 1
+    searchCol = 1
+    
+
+    For currentSkid = 1 To numSkids
+        rowPointer = 1
+        layerCount = 1
+
+        With wsSkids.Range(wsSkids.Cells(rowPointer, startCol), wsSkids.Cells(rowPointer, startCol + 1))
+            .Merge
+            .Value = wsSkidding.Cells(1, searchCol).Value
+            .Font.bold = True
+            .HorizontalAlignment = xlCenter
+            .VerticalAlignment = xlCenter
+            .Borders(xlEdgeTop).Weight = xlMedium
+            .Borders(xlEdgeBottom).Weight = xlMedium
+            .Borders(xlEdgeLeft).Weight = xlMedium
+            .Borders(xlEdgeRight).Weight = xlMedium
+        End With
+        rowPointer = rowPointer + 1
+
+        Do While Application.WorksheetFunction.CountA(wsSkidding.Columns(searchCol)) > 1
+
+            Dim maxVal As Double
+            Dim lastDataRow As Long
+            Dim curRow As Long
+            
+            wsSkids.Cells(rowPointer, startCol).Value = "L" & layerCount
+            
+            ' Find last row with data in the current SKID's 2nd column (assuming col with no blanks)
+            lastDataRow = wsSkidding.Cells(wsSkidding.Rows.Count, searchCol + 1).End(xlUp).Row
+            
+            maxVal = -1 ' initialize to very small number
+            maxRow = 0
+            
+            For curRow = 2 To lastDataRow ' assuming row 1 is headers
+                If IsNumeric(wsSkidding.Cells(curRow, searchCol + 2).Value) Then
+                    If wsSkidding.Cells(curRow, searchCol + 2).Value > maxVal Then
+                        maxVal = wsSkidding.Cells(curRow, searchCol + 2).Value
+                        maxRow = curRow
+                    End If
+                End If
+            Next curRow
+            
+            If maxRow = 0 Then
+                MsgBox "No numeric data found in SKID " & currentSkid
+                Exit For
+            End If
+            Dim layerEndRow As Long
+            layerEndRow = maxRow
+            
+            ' Loop downwards until length column has a value or end of data
+            For curRow = maxRow + 1 To lastDataRow
+                If IsEmpty(wsSkidding.Cells(curRow, searchCol + 2).Value) Then
+                    layerEndRow = curRow ' include empty length row
+                Else
+                    Exit For ' stop at next filled length value
+                End If
+            Next curRow
+            
+            Dim copyRow As Long
+            For copyRow = maxRow To layerEndRow
+                wsSkids.Cells(rowPointer, startCol + 1).Value = wsSkidding.Cells(copyRow, searchCol + 1).Value
+                rowPointer = rowPointer + 1
+            Next copyRow
+            layerCount = layerCount + 1
+            
+            ' Delete the copied rows from wsSkidding and shift up
+            wsSkidding.Range(wsSkidding.Cells(maxRow, searchCol), _
+                             wsSkidding.Cells(layerEndRow, searchCol + 2)).Delete Shift:=xlUp
+        Loop
+        
+        With wsSkids
+            Dim formatRange As Range
+            Set formatRange = .Range(.Cells(2, startCol), .Cells(rowPointer - 1, startCol + 1))
+            
+            ' Apply bold borders to all cells in the range
+            With formatRange.Borders
+                .LineStyle = xlContinuous
+                .Weight = xlMedium
+            End With
+        
+            ' Set individual sides (optional, for full control)
+            With formatRange
+                .Borders(xlEdgeTop).Weight = xlMedium
+                .Borders(xlEdgeBottom).Weight = xlMedium
+                .Borders(xlEdgeLeft).Weight = xlMedium
+                .Borders(xlEdgeRight).Weight = xlMedium
+                .Borders(xlInsideHorizontal).Weight = xlThin
+                .Borders(xlInsideVertical).Weight = xlThin
+            End With
+            
+            ' Set column widths
+            .Columns(startCol).ColumnWidth = 5.78
+            .Columns(startCol + 1).ColumnWidth = 34.78
+            .Columns(startCol + 2).ColumnWidth = 9.78
+            
+            ' Set row height
+            formatRange.RowHeight = 20
+        End With
+        
+        searchCol = searchCol + 4
+        startCol = startCol + 4
+    Next currentSkid
+'=============================================================================================================================================================================================================
+    Application.DisplayAlerts = False
+    ThisWorkbook.Sheets("SKIDDING").Delete
+    Application.DisplayAlerts = True
+'=============================================================================================================================================================================================================
+ End Sub
 
