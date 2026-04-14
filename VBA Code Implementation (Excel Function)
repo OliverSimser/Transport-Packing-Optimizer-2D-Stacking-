@@ -116,11 +116,9 @@ blockCount = 0
 
 Do While sourceWS.Cells(1, checkCol).Value <> ""
 
-    ' Check if this block actually has data under header
     lastRowCheck = sourceWS.Cells(sourceWS.Rows.Count, checkCol).End(xlUp).Row
     
     If lastRowCheck > 1 Then
-        ' There is real data (not just header)
         blockCount = blockCount + 1
     End If
 
@@ -128,9 +126,9 @@ Do While sourceWS.Cells(1, checkCol).Value <> ""
 Loop
     
     If blockCount > 1 Then
-        Call GroupSDsIntoSKIDs_OLD   ' <- your old VBA
+        Call GroupSDsIntoSKIDs_MULTIPLE   ' <- Sorting multiple skids seperatly
     Else
-        Call GroupSDsIntoSKIDs       ' <- your new optimized one
+        Call GroupSDsIntoSKIDs       ' <- Sorting single skid
     End If
     
     Dim wsSkids As Worksheet
@@ -163,8 +161,6 @@ Sub ResetCBASheets()
     MsgBox "Sheets and contents reset. You can start fresh!"
 End Sub
 
-
-'==== DROP-IN REPLACEMENT ====
 Sub GroupSDsIntoSKIDs()
     Dim wsParsed As Worksheet, wsSkidding As Worksheet, wsSkids As Worksheet, wsCovers As Worksheet
     Dim lastRow As Long, i As Long, j As Long
@@ -176,7 +172,7 @@ Sub GroupSDsIntoSKIDs()
     Dim layerLimit As Object
     Const MAX_LEN As Double = 144#
 
-    '--- inputs / cleanup
+    'inputs / cleanup
     Set wsParsed = ThisWorkbook.Sheets("Parsed Parts")
     Set wsCovers = ThisWorkbook.Sheets("COVERS")
 
@@ -187,11 +183,11 @@ Sub GroupSDsIntoSKIDs()
     On Error GoTo 0
     Application.DisplayAlerts = True
 
-    '--- temp layout sheet
+    'temp layout sheet
     Set wsSkidding = Worksheets.Add(After:=wsParsed)
     wsSkidding.Name = "SKIDDING"
 
-    '--- per-height layer limits (keep existing behavior)
+    'per-height layer limits
     Set layerLimit = CreateObject("Scripting.Dictionary")
     layerLimit.Add "06", 14
     layerLimit.Add "08", 14
@@ -205,9 +201,9 @@ Sub GroupSDsIntoSKIDs()
     currentSkid = 1
     startCol = 1
 
-    '======================
+
     ' Build skids by Section, then by Height
-    '======================
+
     For sectionNum = 1 To maxSection
 
         ' Collect parts per height for this section as (Part,Length,Height) items
@@ -236,7 +232,7 @@ Sub GroupSDsIntoSKIDs()
             End If
         Next i
 
-        ' For each height, apply YOUR layer-building algorithm
+        ' For each height, apply layer-building algorithm
         For Each hKey In heightKeys
 
             ' Get collection for this height
@@ -251,7 +247,7 @@ Sub GroupSDsIntoSKIDs()
             SortItemsByLengthDesc items
         
             
-            ' === NEW MID-BAND & TOLERANCE LOGIC (Final Spec) ===
+            ' MID-BAND METHOD & TOLERANCE LOGIC
             Dim total As Long
             Dim midCount As Long
             Dim awkwardCount As Long
@@ -269,7 +265,7 @@ Sub GroupSDsIntoSKIDs()
             smallSum = 0#
             useMidBand = False
             
-            ' --- Count classification ---
+            ' Classification
             For i = 1 To items.Count
                 L = GetLen(items, i)
             
@@ -286,16 +282,16 @@ Sub GroupSDsIntoSKIDs()
                 End If
             Next i
             
-            ' --- Decide useMidBand ---
+            ' Decide useMidBand
             If midCount > total * 0.3 Or awkwardCount > total * 0.95 Then
                 useMidBand = True
             End If
             
-            ' --- Default tolerances (NEW DEFAULTS) ---
+            ' Default tolerances
             singleTolerance = 3.5
             doubleTolerance = 2.5
             
-            ' --- Compute awkwardPieceStartRange ---
+            ' Compute awkwardPieceStartRange
             awkwardPieceStartRange = 80#
             
             If smallCount > 0 Then
@@ -311,7 +307,7 @@ Sub GroupSDsIntoSKIDs()
 
             End If
             
-            ' --- Dynamic tolerance overrides ---
+            ' Tolerance overrides depending on "glue" pieces
             If smallCount > total * 0.4 Then
                 ' MANY glue pieces ? pack tightly
                 singleTolerance = 2.5
@@ -330,7 +326,7 @@ Sub GroupSDsIntoSKIDs()
             Dim layers As New Collection
         
             
-            ' === NEW midStart logic ===
+            ' midStart logic
             Dim midStart As Long
             midStart = 0
             
@@ -343,7 +339,7 @@ Sub GroupSDsIntoSKIDs()
                 Next i
             End If
             
-            ' === MODE A: Mid-band first (updated start point) ===
+            ' MODE A: Mid-band first (updated start point)
             If useMidBand And midStart > 0 Then
                 Do While midStart <= items.Count
                     If GetLen(items, midStart) >= 47.5 Then
@@ -355,7 +351,7 @@ Sub GroupSDsIntoSKIDs()
             End If
 
         
-            ' === MODE A + MODE B: ALWAYS create one top-down layer next ===
+            ' Create top-down layer next
             If items.Count > 0 Then
                 layers.Add MakeNewLayer(items, 1, MAX_LEN)   ' 1 = index 0 in C++
             End If
@@ -363,17 +359,15 @@ Sub GroupSDsIntoSKIDs()
         
         
             
-            ' === Continue making layers ===
+            ' Continue making layers
             Do While items.Count > 0
                 layers.Add MakeNewLayer(items, 1, MAX_LEN)
             Loop
             
-            ' === SORT LAYERS BY TOTAL DESC, THEN BY PIECE COUNT ASC ===
             Dim sortedLayers As New Collection
             Dim used() As Boolean
             Dim bestIdx As Long
 
-            ' Unique local variable names (so no collisions)
             Dim totLen As Double
             Dim pieceCount As Long
             Dim layerRef As Collection
@@ -386,10 +380,10 @@ Sub GroupSDsIntoSKIDs()
 
                 bestIdx = 0
 
-                ' Use existing "i" from the main method
+
                 For i = 1 To layers.Count
                     If Not used(i) Then
-                        ' IMPORTANT: do NOT redeclare "lay"
+
                         Set layerRef = layers(i)
 
                         totLen = SumLayer(layerRef)
@@ -413,9 +407,8 @@ Sub GroupSDsIntoSKIDs()
 
 
 
-            '======================
-            ' WRITE the layers to SKIDDING in skid blocks (preserving existing borders/widths)
-            '======================
+            ' WRITE the layers to SKIDDING in skid blocks
+
             Dim rowPointer As Long, topRow As Long, layerCount As Long, bold As XlBorderWeight, thin As XlBorderWeight
             bold = xlMedium: thin = xlThin
 
@@ -551,9 +544,9 @@ NextHeight:
         Next hKey
     Next sectionNum
 
-    '=========================
-    ' Build final SKIDs sheet from SKIDDING (reuse your existing logic)
-    '=========================
+
+    ' Build final SKIDs sheet from SKIDDING
+
     Dim numSkids As Long, searchCol As Long, maxRow As Long, curSkidRow As Long
     Dim layerCount2 As Long, rowPointer2 As Long, lastDataRow As Long, curRow As Long
     Dim maxVal As Double
@@ -590,7 +583,7 @@ NextHeight:
         End With
         rowPointer2 = rowPointer2 + 1
 
-        ' === NEW: WRITE LAYERS EXACTLY IN THE ORDER THEY APPEAR IN SKIDDING ===
+        ' WRITE LAYERS
 
             Dim layerList As Collection
             Dim lay As Collection
@@ -617,7 +610,7 @@ NextHeight:
                 layerList.Add lay
             Loop
             
-            ' === WRITE THE LAYERS INTO SKIDs SHEET IN EXACT SAME ORDER ===
+            ' WRITE THE LAYERS INTO SKIDs SHEET
             
             rowPointer2 = 2
             layerCount2 = 1
@@ -666,14 +659,13 @@ NextHeight:
         startCol = startCol + 4
     Next skidIdx
 
-    ' === Summary, sequencing & cleanup: reuse your existing SequenceSkids macro after this call if desired ===
     Application.DisplayAlerts = False
     ThisWorkbook.Sheets("SKIDDING").Delete
     Application.DisplayAlerts = True
     
 End Sub
 
-'==== HELPERS PORTED FROM YOUR C++ LOGIC ====
+'  HELPERS
 Private Function MakeNewLayer(ByRef items As Collection, ByVal startIndex As Long, ByVal MAX_LEN As Double) As Collection
     Dim n As Long: n = items.Count
     Dim arr() As Object
@@ -691,7 +683,7 @@ Private Function MakeNewLayer(ByRef items As Collection, ByVal startIndex As Lon
 
     Dim layer As New Collection
 
-    ' === 1. PICK LEAD PART (stable index) ===
+    ' PICK LEAD PART
     Dim firstPart As Object
     Set firstPart = arr(startIndex)
     used(startIndex) = True
@@ -701,7 +693,7 @@ Private Function MakeNewLayer(ByRef items As Collection, ByVal startIndex As Lon
     Dim target As Double
     target = MAX_LEN - firstPart("Length")
 
-    ' === 2. FIND BEST SINGLE / BEST TWO / BEST THREE ===
+    ' FIND BEST SINGLE / BEST TWO / BEST THREE
     Dim bestSingleIdx As Long, bestTwoIdx(1 To 2) As Long, bestThreeIdx(1 To 3) As Long
     Dim bestSingle As Double, bestTwo As Double, bestThree As Double
     Dim bestTotal As Double: bestTotal = -1#
@@ -728,7 +720,7 @@ If bestThreeIdx(1) > 0 Then bestThree = arr(bestThreeIdx(1))("Length") + arr(bes
 bestTotal = Max3(bestSingle, bestTwo, bestThree)
 
 
-    ' === 3. APPLY TOLERANCES USING ARRAY INDICES (no shift) ===
+    ' APPLY TOLERANCES USING
     If bestTotal >= 0 Then
 
         ' SINGLE
@@ -765,10 +757,9 @@ bestTotal = Max3(bestSingle, bestTwo, bestThree)
 
 FinishPrimary:
 
-' === 4. NEW TOP-OFF LOGIC (C++ MATCH) ===
+' TOP-OFF LOGIC
 currentTotal = SumLayer(layer)
 
-' parts[] is represented by arr() with used() flags
 ' Find the largest unused part (arr is sorted DESC)
 Dim largestIdx As Long
 largestIdx = -1
@@ -839,7 +830,7 @@ If largestIdx > 0 Then
     End If
 End If
 
-    ' === 5. COMPACT unused items back into collection ===
+    ' COMPACT unused items back into collection
     Dim newItems As New Collection
     For i = 1 To n
         If Not used(i) Then newItems.Add arr(i)
@@ -921,7 +912,7 @@ Private Function FindBestThree(arr As Variant, used() As Boolean, target As Doub
 
         complement = target - arr(i)("Length")
 
-        ' === FIX: capture FindBestTwo result safely ===
+        ' capture FindBestTwo result safely
         tmpPair = FindBestTwo(arr, used, complement, i + 1)
 
         If tmpPair(1) > 0 Then
@@ -949,8 +940,6 @@ Private Function CountTrue(used() As Boolean) As Long
         If used(i) Then CountTrue = CountTrue + 1
     Next i
 End Function
-
-'==== small utilities ====
 
 Private Function GetLen(ByRef items As Collection, ByVal idx As Long) As Double
     ' Safe accessor: return 0 if idx is out of range
@@ -984,7 +973,7 @@ Private Sub SortItemsByLengthDesc(ByRef items As Collection)
         Set arr(i) = items(i)
     Next i
 
-    ' In-place sort: simple insertion sort on the array by Length (DESC)
+    ' simple insertion sort on the array by Length
     Dim key As Object
     Dim keyLen As Double
     For i = 2 To n
@@ -1040,7 +1029,7 @@ Sub SequenceSkids()
     Dim subIndex As Long, sequenceBase As Long
 
     Do While left(wsSkids.Cells(1, startCol).Value, 4) = "SKID"
-        ' --- Find last row for this SKID ---
+        ' Find last row for this SKID
         r = 2
         Do While wsSkids.Cells(r, startCol + 1).Value <> ""
             r = r + 1
@@ -1053,14 +1042,14 @@ Sub SequenceSkids()
             GoTo NextSkid
         End If
 
-        ' --- Insert sequence column header ---
+        ' Insert sequence column header
         seqCol = startCol + 2
         wsSkids.Cells(1, seqCol).Value = "SEQUENCE"
         wsSkids.Cells(1, seqCol).Interior.Color = RGB(255, 255, 0)
         wsSkids.Cells(1, seqCol).Font.bold = True
         wsSkids.Range(wsSkids.Cells(2, seqCol), wsSkids.Cells(lastRow, seqCol)).ClearContents
 
-        ' --- Determine max number of layers ---
+        ' Determine max number of layers
         maxLayers = 0
         For r = 2 To lastRow
             If wsSkids.Cells(r, startCol).Value Like "L*" Then
@@ -1070,7 +1059,7 @@ Sub SequenceSkids()
             End If
         Next r
 
-        ' --- Sequence each layer ---
+        ' Sequence each layer
         For i = 1 To maxLayers
             layerLabel = "L" & i
             Set layerParts = New Collection
@@ -1080,8 +1069,8 @@ Sub SequenceSkids()
                 If wsSkids.Cells(r, startCol).Value = layerLabel And wsSkids.Cells(r, startCol + 1).Value <> "" Then
                     layerParts.Add r
                     j = r + 1
+                    
                     Do While wsSkids.Cells(j, startCol).Value = "" And wsSkids.Cells(j, startCol + 1).Value <> ""
-                        And Left(wsSkidding.Cells(j + 1, startCol).Value, 4) <> "SKID"
                         layerParts.Add j
                         j = j + 1
                     Loop
@@ -1137,7 +1126,7 @@ Sub SequenceSkids()
             End If
         Next i
 
-        ' Optional: Format sequence column
+        ' Format sequence column
         With wsSkids.Range(wsSkids.Cells(2, seqCol), wsSkids.Cells(lastRow, seqCol))
             .NumberFormat = "0.00"
             .Borders.LineStyle = xlContinuous
@@ -1148,7 +1137,7 @@ NextSkid:
         startCol = startCol + 4
         currentSkid = currentSkid + 1
     Loop
-     ' === START: Build Summary Table ===
+     ' Build Summary Table
 
     Dim chartStartCol As Long
     Dim chartRow As Long
@@ -1156,7 +1145,7 @@ NextSkid:
     chartRow = 2
 
     With wsSkids
-        ' --- SKID NUMBER & SKID ID Map ---
+        ' SKID NUMBER & SKID ID Map
         .Cells(1, chartStartCol).Value = "SKID NUMBER"
         .Cells(1, chartStartCol + 1).Value = "SKID ID HERE"
         .Range(.Cells(1, chartStartCol), .Cells(1, chartStartCol + 1)).Font.bold = True
@@ -1178,7 +1167,7 @@ NextSkid:
         End With
     End With
 
-    ' --- SKID Summary Table ---
+    ' SKID Summary Table
     chartStartCol = chartStartCol + 3
     chartRow = 2
 
@@ -1216,7 +1205,7 @@ NextSkid:
             skidCol = skidCol + 4
         Loop
 
-        ' --- Format Summary Table ---
+        ' Format Summary Table
         .Columns(chartStartCol).AutoFit
         .Columns(chartStartCol + 1).AutoFit
         .Columns(chartStartCol + 2).ColumnWidth = 14
@@ -1228,7 +1217,7 @@ NextSkid:
             .Weight = xlThin
         End With
 
-        ' --- Optional: Sort by PRODUCT ---
+        ' Optional: Sort by PRODUCT
         With wsSkids.Sort
             .SortFields.Clear
             .SortFields.Add key:=wsSkids.Range(wsSkids.Cells(2, chartStartCol + 1), wsSkids.Cells(chartRow - 1, chartStartCol + 1)), _
@@ -1242,7 +1231,7 @@ NextSkid:
         End With
     End With
 
-    ' === END Summary Table ===
+    ' END Summary Table
 
     MsgBox "Sequencing complete.", vbInformation
 End Sub
@@ -1334,7 +1323,7 @@ Sub CreateCoversSheet()
 
 End Sub
 
-Sub GroupSDsIntoSKIDs_OLD()
+Sub GroupSDsIntoSKIDs_MULTIPLE()
     Dim wsParsed As Worksheet, wsSkidding As Worksheet, wsSkids As Worksheet, wsCovers As Worksheet
     Dim lastRow As Long, i As Long, j As Long
     Dim part As String, heightVal As String, lengthVal As Double, qty As Long
@@ -1698,10 +1687,10 @@ Sub GroupSDsIntoSKIDs_OLD()
         searchCol = searchCol + 4
         startCol = startCol + 4
     Next currentSkid
-'=============================================================================================================================================================================================================
+
     Application.DisplayAlerts = False
     ThisWorkbook.Sheets("SKIDDING").Delete
     Application.DisplayAlerts = True
-'=============================================================================================================================================================================================================
+
  End Sub
 
